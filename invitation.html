@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="vi" class="invitation-locked">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="theme-color" content="#f4ede3">
+  <meta name="description" content="Thiệp mời lễ thành hôn của [Tên Cô Dâu] và [Tên Chú Rể]">
+  <title>Thiệp Mời Cưới — [Tên Cô Dâu] &amp; [Tên Chú Rể]</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='.9em' font-size='56'%3E♥%3C/text%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&amp;family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <noscript>
+    <style>
+      html.invitation-locked, .invitation-page { overflow: auto !important; height: auto !important; }
+      .invite-opening { display: none !important; }
+      .invite-reveal { opacity: 1 !important; transform: none !important; }
+    </style>
+  </noscript>
+  <script>
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    try {
+      var storedInviteTheme = localStorage.getItem('theme');
+      var useDarkInvite = storedInviteTheme ? storedInviteTheme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('invite-dark', useDarkInvite);
+    } catch (error) {}
+  </script>
+</head>
+<body class="invitation-page invitation-locked light-mode">
+
+<audio id="invite-music" src="nhac_nen.mp3" loop preload="none"></audio>
+<div class="invite-controls" aria-label="Điều khiển giao diện">
+  <button class="invite-control-button" id="invite-theme-toggle" type="button" aria-label="Chuyển giao diện sáng hoặc tối" aria-pressed="false">
+    <span class="invite-theme-sun" aria-hidden="true">☀</span>
+    <span class="invite-theme-moon" aria-hidden="true">☾</span>
+  </button>
+  <button class="invite-control-button invite-music-button" id="invite-music-toggle" type="button" aria-label="Bật hoặc tắt nhạc nền" aria-pressed="false">
+    <span class="invite-music-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+  </button>
+</div>
+
+<!-- Ba lớp ánh sáng thay đổi theo tiến trình cuộn, tạo cảm giác một ngày đang trôi qua. -->
+<div class="invite-ambient-light" aria-hidden="true">
+  <i class="is-morning"></i>
+  <i class="is-golden"></i>
+  <i class="is-cinematic"></i>
+  <i class="is-dusk"></i>
+</div>
+
+<!-- INTRO — không cá nhân hóa cho tới khi có backend và mã mời thực tế. -->
+<div class="invite-opening" id="invite-opening" role="dialog" aria-modal="true" aria-labelledby="invite-opening-title">
+  <div class="invite-opening-grain" aria-hidden="true"></div>
+
+  <svg class="invite-symbols" aria-hidden="true">
+    <symbol id="invite-dove-symbol" viewBox="0 0 100 56">
+      <path d="M5 34c13-2 23-7 34-17 4-4 9-7 15-7 8 0 14 4 17 10l20-7-14 14c-6 6-15 9-27 10-10 1-18 5-27 14 1-8-2-13-8-18-3 1-6 1-10 1Z"></path>
+      <path class="invite-dove-wing" d="M42 30C32 22 30 11 38 2c4 10 12 18 24 24-6 4-13 5-20 4Z"></path>
+    </symbol>
+    <symbol id="invite-blossom-symbol" viewBox="0 0 48 48">
+      <g class="invite-blossom-petals">
+        <ellipse cx="24" cy="11" rx="7" ry="11"></ellipse>
+        <ellipse cx="24" cy="11" rx="7" ry="11" transform="rotate(72 24 24)"></ellipse>
+        <ellipse cx="24" cy="11" rx="7" ry="11" transform="rotate(144 24 24)"></ellipse>
+        <ellipse cx="24" cy="11" rx="7" ry="11" transform="rotate(216 24 24)"></ellipse>
+        <ellipse cx="24" cy="11" rx="7" ry="11" transform="rotate(288 24 24)"></ellipse>
+      </g>
+      <circle class="invite-blossom-heart" cx="24" cy="24" r="5"></circle>
+    </symbol>
+  </svg>
+
+  <div class="invite-intro-photos" aria-hidden="true">
+    <figure class="invite-intro-photo photo-a"><img src="images/anh_cuoi_2.jpg" alt="" decoding="async"></figure>
+    <figure class="invite-intro-photo photo-b"><img src="images/anh_cuoi_5.jpg" alt="" decoding="async"></figure>
+    <figure class="invite-intro-photo photo-c"><img src="images/anh_cuoi_7.jpg" alt="" decoding="async"></figure>
+  </div>
+
+  <div class="invite-doves" aria-hidden="true">
+    <span class="invite-dove dove-1"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+    <span class="invite-dove dove-2"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+    <span class="invite-dove dove-3"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+    <span class="invite-dove dove-4"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+  </div>
+
+  <div class="invite-intro-growth" aria-hidden="true">
+    <svg class="invite-growth invite-growth-left" viewBox="0 0 320 760" preserveAspectRatio="xMinYMax meet">
+      <path class="invite-stem" d="M8 754C76 664 63 576 123 506c55-65 40-143 100-205 41-43 50-104 73-177"></path>
+      <path class="invite-stem is-fine" d="M77 636c55-7 89-36 112-78M126 501c-37-2-68-22-91-61M177 408c48-4 83-31 105-70M218 305c-35-9-56-29-72-61"></path>
+      <g class="invite-leaf leaf-1"><ellipse cx="72" cy="626" rx="28" ry="12" transform="rotate(-24 72 626)"></ellipse></g>
+      <g class="invite-leaf leaf-2"><ellipse cx="42" cy="436" rx="27" ry="11" transform="rotate(32 42 436)"></ellipse></g>
+      <g class="invite-leaf leaf-3"><ellipse cx="190" cy="554" rx="30" ry="12" transform="rotate(-32 190 554)"></ellipse></g>
+      <g class="invite-leaf leaf-4"><ellipse cx="279" cy="334" rx="27" ry="11" transform="rotate(-28 279 334)"></ellipse></g>
+      <g class="invite-leaf leaf-5"><ellipse cx="148" cy="239" rx="25" ry="10" transform="rotate(34 148 239)"></ellipse></g>
+      <g class="invite-leaf leaf-6"><ellipse cx="295" cy="123" rx="23" ry="9" transform="rotate(-55 295 123)"></ellipse></g>
+    </svg>
+    <svg class="invite-growth invite-growth-right" viewBox="0 0 320 760" preserveAspectRatio="xMinYMax meet">
+      <path class="invite-stem" d="M8 754C76 664 63 576 123 506c55-65 40-143 100-205 41-43 50-104 73-177"></path>
+      <path class="invite-stem is-fine" d="M77 636c55-7 89-36 112-78M126 501c-37-2-68-22-91-61M177 408c48-4 83-31 105-70M218 305c-35-9-56-29-72-61"></path>
+      <g class="invite-leaf leaf-1"><ellipse cx="72" cy="626" rx="28" ry="12" transform="rotate(-24 72 626)"></ellipse></g>
+      <g class="invite-leaf leaf-2"><ellipse cx="42" cy="436" rx="27" ry="11" transform="rotate(32 42 436)"></ellipse></g>
+      <g class="invite-leaf leaf-3"><ellipse cx="190" cy="554" rx="30" ry="12" transform="rotate(-32 190 554)"></ellipse></g>
+      <g class="invite-leaf leaf-4"><ellipse cx="279" cy="334" rx="27" ry="11" transform="rotate(-28 279 334)"></ellipse></g>
+      <g class="invite-leaf leaf-5"><ellipse cx="148" cy="239" rx="25" ry="10" transform="rotate(34 148 239)"></ellipse></g>
+      <g class="invite-leaf leaf-6"><ellipse cx="295" cy="123" rx="23" ry="9" transform="rotate(-55 295 123)"></ellipse></g>
+    </svg>
+  </div>
+
+  <!-- Cao trào khi mở: hai cành tiếp tục vươn chéo, phân nhánh và nở hoa khắp khung hình. -->
+  <div class="invite-bloom-crescendo" aria-hidden="true">
+    <div class="invite-bloom-light"></div>
+    <svg class="invite-cross-stems" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <g class="invite-cross-vine vine-from-left">
+        <path class="invite-cross-main" d="M-5 105C8 89 10 79 25 68S42 56 54 46 75 27 105-7"></path>
+        <path class="invite-cross-twig" d="M12 82C8 75 7 69 8 62M25 68c-1-8 1-14 6-20M40 58c-8-2-14-6-18-12M55 45c-1-7 2-13 7-19M73 29c-7-1-12-4-17-9M88 13c0-5 3-9 7-13"></path>
+      </g>
+      <g class="invite-cross-vine vine-from-right">
+        <path class="invite-cross-main" d="M105 108C90 89 88 79 75 69S59 58 46 49 25 30-5-6"></path>
+        <path class="invite-cross-twig" d="M90 88c5-7 7-13 6-20M76 70c0-8-2-14-7-20M61 59c8-2 14-6 18-12M45 48c1-7-2-13-7-19M27 31c7-1 12-4 17-9M11 12C11 7 8 3 4-1"></path>
+      </g>
+    </svg>
+
+    <div class="invite-cross-ornaments vine-from-left">
+      <i class="invite-cross-leaf leaf-a1"></i><i class="invite-cross-leaf leaf-a2"></i>
+      <i class="invite-cross-leaf leaf-a3"></i><i class="invite-cross-leaf leaf-a4"></i>
+      <i class="invite-cross-leaf leaf-a5"></i><i class="invite-cross-leaf leaf-a6"></i>
+      <i class="invite-cross-leaf leaf-a7"></i>
+      <svg class="invite-blossom bloom-a1" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-a2" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-a3" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-a4" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+    </div>
+
+    <div class="invite-cross-ornaments vine-from-right">
+      <i class="invite-cross-leaf leaf-b1"></i><i class="invite-cross-leaf leaf-b2"></i>
+      <i class="invite-cross-leaf leaf-b3"></i><i class="invite-cross-leaf leaf-b4"></i>
+      <i class="invite-cross-leaf leaf-b5"></i><i class="invite-cross-leaf leaf-b6"></i>
+      <i class="invite-cross-leaf leaf-b7"></i>
+      <svg class="invite-blossom bloom-b1" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-b2" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-b3" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+      <svg class="invite-blossom bloom-b4" viewBox="0 0 48 48"><use href="#invite-blossom-symbol"></use></svg>
+    </div>
+  </div>
+
+  <!-- Bề mặt lá thư mở rộng thành nền hero để hai sân khấu nối liền thay vì cắt cảnh. -->
+  <div class="invite-match-sheet" aria-hidden="true"></div>
+  <div class="invite-match-mark" aria-hidden="true">L <i>&amp;</i> B</div>
+
+  <div class="invite-envelope-scene" aria-hidden="true">
+    <div class="invite-envelope">
+      <div class="invite-envelope-back"></div>
+      <div class="invite-envelope-letter">
+        <span>L &amp; B</span>
+        <small>20 · 10 · 2026</small>
+      </div>
+      <div class="invite-envelope-front"></div>
+      <div class="invite-envelope-flap"></div>
+      <div class="invite-thread"></div>
+      <div class="invite-seal">L<span>&amp;</span>B</div>
+    </div>
+  </div>
+
+  <div class="invite-opening-copy">
+    <p class="invite-kicker">Một tấm thiệp gửi đến</p>
+    <p class="invite-recipient" id="invite-opening-title">Quý khách</p>
+    <p class="invite-opening-date">20 · 10 · 2026</p>
+    <button class="invite-open-button" id="invite-open-button" type="button">
+      <span>Mở thiệp</span>
+      <i aria-hidden="true">↗</i>
+    </button>
+  </div>
+
+  <p class="invite-opening-reveal-line" aria-hidden="true">
+    <span>Một ngày nở hoa</span>
+    <strong>Ngày chúng mình thành đôi</strong>
+  </p>
+</div>
+
+<nav class="invite-quick-nav" id="invite-quick-nav" aria-label="Đi tới nội dung chính">
+  <a href="#events">Sự kiện</a>
+  <a href="#schedule">Lịch trình</a>
+  <a href="#contact">Liên hệ</a>
+</nav>
+
+<main class="invite-main" id="invite-main">
+  <!-- Lớp cành lá cố định tạo nhịp thị giác xuyên suốt mà không cản nội dung. -->
+  <div class="invite-page-botanicals" aria-hidden="true">
+    <svg class="invite-page-branch is-left" viewBox="0 0 220 760" preserveAspectRatio="xMinYMid meet">
+      <path d="M2 756C88 653 52 557 123 470c61-75 22-164 91-257"></path>
+      <ellipse cx="72" cy="626" rx="25" ry="9" transform="rotate(-30 72 626)"></ellipse>
+      <ellipse cx="105" cy="504" rx="27" ry="10" transform="rotate(28 105 504)"></ellipse>
+      <ellipse cx="151" cy="401" rx="24" ry="9" transform="rotate(-34 151 401)"></ellipse>
+      <ellipse cx="165" cy="290" rx="22" ry="8" transform="rotate(31 165 290)"></ellipse>
+    </svg>
+    <svg class="invite-page-branch is-right" viewBox="0 0 220 760" preserveAspectRatio="xMinYMid meet">
+      <path d="M2 756C88 653 52 557 123 470c61-75 22-164 91-257"></path>
+      <ellipse cx="72" cy="626" rx="25" ry="9" transform="rotate(-30 72 626)"></ellipse>
+      <ellipse cx="105" cy="504" rx="27" ry="10" transform="rotate(28 105 504)"></ellipse>
+      <ellipse cx="151" cy="401" rx="24" ry="9" transform="rotate(-34 151 401)"></ellipse>
+      <ellipse cx="165" cy="290" rx="22" ry="8" transform="rotate(31 165 290)"></ellipse>
+    </svg>
+  </div>
+
+  <!-- Nhánh dẫn đường phản ánh tiến trình cuộn; mỗi bông hoa đánh dấu một chương của thiệp. -->
+  <div class="invite-scroll-vine" aria-hidden="true">
+    <svg viewBox="0 0 86 1000" preserveAspectRatio="none">
+      <path class="invite-scroll-vine-base" d="M74-26C37 79 65 244 17 390S61 635 8 762 78 880 12 1020"></path>
+      <path class="invite-scroll-vine-progress" id="invite-scroll-vine-progress" pathLength="1000" d="M74-26C37 79 65 244 17 390S61 635 8 762 78 880 12 1020"></path>
+    </svg>
+    <i class="invite-vine-node node-1" data-threshold="0.08"></i>
+    <i class="invite-vine-node node-2" data-threshold="0.25"></i>
+    <i class="invite-vine-node node-3" data-threshold="0.43"></i>
+    <i class="invite-vine-node node-4" data-threshold="0.63"></i>
+    <i class="invite-vine-node node-5" data-threshold="0.82"></i>
+  </div>
+
+  <!-- 01 · TẤM THIỆP CHÍNH -->
+  <section class="invite-hero" id="hero">
+    <div class="invite-paper-frame" aria-hidden="true"></div>
+    <div class="invite-hero-inner invite-reveal">
+      <div class="invite-families" aria-label="Thông tin gia đình hai bên">
+        <div>
+          <span>NHÀ GÁI</span>
+          <strong>Ông [Tên bố cô dâu]</strong>
+          <strong>Bà [Tên mẹ cô dâu]</strong>
+        </div>
+        <div class="invite-family-mark" aria-hidden="true">L &amp; B</div>
+        <div>
+          <span>NHÀ TRAI</span>
+          <strong>Ông [Tên bố chú rể]</strong>
+          <strong>Bà [Tên mẹ chú rể]</strong>
+        </div>
+      </div>
+
+      <div class="invite-hero-copy">
+        <p class="invite-eyebrow">Trân trọng báo tin lễ thành hôn của</p>
+        <h1 class="invite-couple-names">
+          <span>[Tên Cô Dâu]</span>
+          <i>&amp;</i>
+          <span>[Tên Chú Rể]</span>
+        </h1>
+        <div class="invite-ornament" aria-hidden="true"><span></span><b>◆</b><span></span></div>
+        <p class="invite-formal-copy">
+          Sự hiện diện của Quý khách là niềm vinh hạnh<br>
+          và là món quà quý giá trong ngày vui của gia đình chúng tôi.
+        </p>
+        <time class="invite-main-date" datetime="2026-10-20">
+          <span>THỨ BA</span>
+          <strong>20</strong>
+          <span>THÁNG 10 · 2026</span>
+        </time>
+      </div>
+
+      <a class="invite-scroll-cue" href="#events">
+        <span>Thông tin ngày cưới</span>
+        <i aria-hidden="true"></i>
+      </a>
+    </div>
+  </section>
+
+  <!-- 02 · THÔNG TIN SỰ KIỆN -->
+  <section class="invite-section invite-events" id="events">
+    <div class="invite-container">
+      <header class="invite-section-heading invite-reveal">
+        <p class="invite-eyebrow">Save the date</p>
+        <h2>Ngày chúng mình thành đôi</h2>
+        <p>Hai khoảnh khắc quan trọng trong ngày vui của hai gia đình.</p>
+      </header>
+
+      <div class="invite-countdown invite-reveal" id="invite-countdown" aria-live="polite">
+        <div><strong id="countdown-days">—</strong><span>Ngày</span></div>
+        <div><strong id="countdown-hours">—</strong><span>Giờ</span></div>
+        <div><strong id="countdown-minutes">—</strong><span>Phút</span></div>
+      </div>
+
+      <div class="invite-event-grid">
+        <article class="invite-event-card invite-reveal">
+          <div class="invite-event-number">01</div>
+          <p class="invite-card-kicker">Buổi sáng · Nghi lễ gia đình</p>
+          <h3>Lễ Gia Tiên</h3>
+          <dl>
+            <div><dt>Thời gian</dt><dd>08:00 · Thứ Ba, 20/10/2026</dd></div>
+            <div><dt>Địa điểm</dt><dd>Tư gia Nhà trai / Nhà gái</dd></div>
+            <div><dt>Địa chỉ</dt><dd>[Địa chỉ tổ chức Lễ Gia Tiên]</dd></div>
+          </dl>
+          <div class="invite-card-actions">
+            <a href="https://maps.google.com/?q=Dia+chi+Le+Gia+Tien" target="_blank" rel="noopener">Chỉ đường</a>
+            <a class="invite-calendar-link" href="#" data-title="Lễ Gia Tiên — [Tên Cô Dâu] & [Tên Chú Rể]" data-dates="20261020T080000/20261020T110000" data-location="[Địa chỉ tổ chức Lễ Gia Tiên]">Thêm vào lịch</a>
+          </div>
+        </article>
+
+        <article class="invite-event-card invite-reveal">
+          <div class="invite-event-number">02</div>
+          <p class="invite-card-kicker">Buổi tối · Tiệc thân mật</p>
+          <h3>Tiệc Cưới</h3>
+          <dl>
+            <div><dt>Đón khách</dt><dd>17:30 · Thứ Ba, 20/10/2026</dd></div>
+            <div><dt>Địa điểm</dt><dd>Trung tâm Tiệc cưới ABC</dd></div>
+            <div><dt>Địa chỉ</dt><dd>[Địa chỉ chi tiết của sảnh tiệc]</dd></div>
+          </dl>
+          <div class="invite-card-actions">
+            <a href="https://maps.google.com/?q=Trung+tam+Tiec+cuoi+ABC" target="_blank" rel="noopener">Chỉ đường</a>
+            <a class="invite-calendar-link" href="#" data-title="Tiệc Cưới — [Tên Cô Dâu] & [Tên Chú Rể]" data-dates="20261020T173000/20261020T213000" data-location="Trung tâm Tiệc cưới ABC, [Địa chỉ chi tiết]">Thêm vào lịch</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 · DẢI ẢNH CƯỚI — nối chất kể chuyện của website chính vào thiệp. -->
+  <section class="invite-gallery" aria-labelledby="invite-gallery-title">
+    <div class="invite-container">
+      <header class="invite-gallery-heading invite-reveal">
+        <p class="invite-eyebrow">A glimpse of us</p>
+        <h2 id="invite-gallery-title">Trước ngày mình thành đôi</h2>
+      </header>
+      <div class="invite-gallery-grid">
+        <figure class="invite-gallery-card is-left invite-reveal">
+          <button class="invite-gallery-open" type="button" aria-label="Xem ảnh: một ngày rất gần">
+            <img src="images/anh_cuoi_1.jpg" alt="Khoảnh khắc ảnh cưới của cô dâu và chú rể" loading="lazy" decoding="async">
+            <span class="invite-gallery-view" aria-hidden="true">Xem ảnh <i>↗</i></span>
+          </button>
+          <figcaption>một ngày rất gần</figcaption>
+        </figure>
+        <figure class="invite-gallery-card is-main invite-reveal">
+          <button class="invite-gallery-open" type="button" aria-label="Xem ảnh: chúng mình 2026">
+            <img src="images/anh_cuoi_4.jpg" alt="Cô dâu và chú rể trong bộ ảnh cưới" loading="lazy" decoding="async">
+            <span class="invite-gallery-view" aria-hidden="true">Xem ảnh <i>↗</i></span>
+          </button>
+          <figcaption>chúng mình · 2026</figcaption>
+        </figure>
+        <figure class="invite-gallery-card is-right invite-reveal">
+          <button class="invite-gallery-open" type="button" aria-label="Xem ảnh: và rất nhiều ngày sau">
+            <img src="images/anh_cuoi_8.jpg" alt="Một kỷ niệm trong bộ ảnh cưới" loading="lazy" decoding="async">
+            <span class="invite-gallery-view" aria-hidden="true">Xem ảnh <i>↗</i></span>
+          </button>
+          <figcaption>và rất nhiều ngày sau</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 · LỊCH TRÌNH & DRESS CODE -->
+  <section class="invite-section invite-practical" id="schedule">
+    <div class="invite-container invite-practical-grid">
+      <div class="invite-schedule invite-reveal">
+        <header class="invite-section-heading is-left">
+          <p class="invite-eyebrow">Wedding itinerary</p>
+          <h2>Một ngày thật vui</h2>
+          <p>Những mốc chính để Quý khách thuận tiện sắp xếp thời gian.</p>
+        </header>
+        <ol class="invite-timeline">
+          <li><time>08:00</time><div><strong>Lễ Gia Tiên</strong><span>Nghi lễ tại tư gia</span></div></li>
+          <li><time>10:00</time><div><strong>Lễ Đón Dâu</strong><span>Hai gia đình gặp gỡ</span></div></li>
+          <li><time>17:30</time><div><strong>Đón Khách</strong><span>Chụp ảnh và gặp gỡ</span></div></li>
+          <li><time>18:30</time><div><strong>Khai Tiệc</strong><span>Cùng nâng ly chung vui</span></div></li>
+          <li><time>21:00</time><div><strong>Lời Cảm Ơn</strong><span>Khép lại một ngày đáng nhớ</span></div></li>
+        </ol>
+      </div>
+
+      <aside class="invite-notes invite-reveal">
+        <p class="invite-card-kicker">Dress code &amp; Notes</p>
+        <h3>Một chút lưu ý</h3>
+        <div class="invite-swatches" aria-label="Bảng màu trang phục gợi ý">
+          <span style="--swatch:#f1e8dc"><i></i>Ivory</span>
+          <span style="--swatch:#d5c19f"><i></i>Be</span>
+          <span style="--swatch:#9e6962"><i></i>Dusty rose</span>
+          <span style="--swatch:#4a4039"><i></i>Nâu đậm</span>
+        </div>
+        <ul>
+          <li>Quý khách vui lòng có mặt trước giờ khai tiệc khoảng 15 phút.</li>
+          <li>Thông tin chỗ đậu xe và sảnh tiệc sẽ được cập nhật tại đây.</li>
+          <li>Nếu cần hỗ trợ đặc biệt, xin vui lòng liên hệ với chúng mình.</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 05 · FAQ NGÀY CƯỚI -->
+  <section class="invite-section invite-faq" id="faq">
+    <div class="invite-container invite-faq-layout">
+      <header class="invite-section-heading is-left invite-reveal">
+        <p class="invite-eyebrow">Wedding guide</p>
+        <h2>Một vài điều cần biết</h2>
+        <p>Những thông tin nhỏ để Quý khách thuận tiện hơn trong ngày vui của chúng mình.</p>
+      </header>
+
+      <div class="invite-faq-list invite-reveal">
+        <details>
+          <summary><span>01</span>Bãi đậu xe ở đâu?<i aria-hidden="true"></i></summary>
+          <div><p>Quý khách có thể gửi xe tại <strong>[Tên và vị trí bãi đậu xe]</strong>. Từ bãi xe sẽ có bảng hướng dẫn hoặc nhân sự hỗ trợ đến sảnh tiệc.</p></div>
+        </details>
+        <details>
+          <summary><span>02</span>Tiệc được tổ chức tại sảnh nào?<i aria-hidden="true"></i></summary>
+          <div><p>Tiệc cưới diễn ra tại <strong>Sảnh [Tên sảnh] · Tầng [Số tầng]</strong>, Trung tâm Tiệc cưới ABC. Thông tin nhận diện sảnh sẽ được đặt tại khu vực lễ tân.</p></div>
+        </details>
+        <details>
+          <summary><span>03</span>Nên có mặt lúc mấy giờ?<i aria-hidden="true"></i></summary>
+          <div><p>Chúng mình đón khách từ <strong>17:30</strong>. Quý khách nên có mặt trước giờ khai tiệc khoảng <strong>15–20 phút</strong> để thuận tiện chụp ảnh và gặp gỡ.</p></div>
+        </details>
+        <details>
+          <summary><span>04</span>Cần hỗ trợ trong ngày cưới?<i aria-hidden="true"></i></summary>
+          <div><p>Vui lòng liên hệ <strong>[Tên người hỗ trợ] · [Số điện thoại]</strong>. Số điện thoại này dành cho hỗ trợ đường đi, chỗ đậu xe và vị trí sảnh.</p></div>
+        </details>
+        <details>
+          <summary><span>05</span>Các bé có thể tham dự không?<i aria-hidden="true"></i></summary>
+          <div><p><strong>[Thông tin dành cho trẻ em]</strong>. Gia đình vui lòng cân nhắc giờ nghỉ của các bé; nếu cần ghế trẻ em, có thể liên hệ trước với người hỗ trợ.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 · KHOẢNG NGHỈ CẢM XÚC -->
+  <section class="invite-photo-break invite-reveal" aria-label="Lời nhắn từ cô dâu và chú rể">
+    <div class="invite-photo-wrap">
+      <img src="images/anh_cuoi_chinh.jpg" alt="Một khoảnh khắc của cô dâu và chú rể" loading="lazy" decoding="async">
+      <div class="invite-photo-shade"></div>
+      <div class="invite-couple-note">
+        <p class="invite-eyebrow">A note from us</p>
+        <blockquote>
+          <span>“</span>
+          Chúng mình đã đi cùng nhau qua rất nhiều ngày bình thường để đến ngày đặc biệt này. Ngày hôm ấy sẽ trọn vẹn hơn khi có những người mình thương ở bên. Cảm ơn bạn đã mở tấm thiệp và dành tình cảm cho chúng mình.
+        </blockquote>
+        <a class="invite-love-story-link" href="index.html" aria-label="Xem câu chuyện tình yêu của chúng mình">
+          <span class="invite-story-preview" aria-hidden="true">
+            <img src="images/anh_gap_go.jpg" alt="" loading="lazy" decoding="async">
+            <img src="images/anh_nen_3.jpg" alt="" loading="lazy" decoding="async">
+            <img src="images/anh_nen_4.jpg" alt="" loading="lazy" decoding="async">
+          </span>
+          <span class="invite-story-copy">
+            <small>Love story · Từ lần đầu gặp gỡ</small>
+            <strong>Xem câu chuyện của chúng mình</strong>
+            <em>Mở lại những khoảnh khắc đã đưa chúng mình đến ngày hôm nay</em>
+          </span>
+          <span class="invite-story-arrow" aria-hidden="true"><i>↗</i></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 · LIÊN HỆ -->
+  <section class="invite-section invite-contact" id="contact">
+    <div class="invite-container">
+      <header class="invite-section-heading invite-reveal">
+        <p class="invite-eyebrow">Contact</p>
+        <h2>Chúng mình luôn ở đây</h2>
+        <p>Nếu cần hỗ trợ về đường đi hoặc thông tin trong ngày cưới, Quý khách có thể liên hệ:</p>
+      </header>
+      <div class="invite-contact-grid">
+        <article class="invite-contact-card invite-reveal">
+          <span>CÔ DÂU</span>
+          <h3>[Tên Cô Dâu]</h3>
+          <p>[Số điện thoại cô dâu]</p>
+        </article>
+        <article class="invite-contact-card invite-reveal">
+          <span>CHÚ RỂ</span>
+          <h3>[Tên Chú Rể]</h3>
+          <p>[Số điện thoại chú rể]</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 · LỜI CẢM ƠN -->
+  <footer class="invite-closing">
+    <div class="invite-closing-garden invite-reveal" aria-hidden="true">
+      <span class="closing-stem is-left"></span>
+      <span class="closing-stem is-right"></span>
+      <span class="closing-dove is-left"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+      <span class="closing-dove is-right"><svg viewBox="0 0 100 56"><use href="#invite-dove-symbol"></use></svg></span>
+      <i class="closing-flower flower-1"></i>
+      <i class="closing-flower flower-2"></i>
+      <i class="closing-flower flower-3"></i>
+    </div>
+    <div class="invite-closing-inner invite-reveal">
+      <p class="invite-eyebrow">Thank you</p>
+      <div class="invite-closing-seal" aria-hidden="true">
+        <span></span>
+        <div class="invite-closing-mark">L <i>&amp;</i> B</div>
+      </div>
+      <p>
+        Cảm ơn Quý khách đã dành thời gian và tình cảm<br>
+        để trở thành một phần trong ngày vui của chúng mình.
+      </p>
+      <strong>Hẹn gặp Quý khách vào ngày 20 · 10 · 2026</strong>
+      <span class="invite-closing-thread" aria-hidden="true"></span>
+      <div class="invite-closing-actions">
+        <button class="invite-replay-button" id="invite-replay-button" type="button">Mở lại tấm thiệp <i aria-hidden="true">↺</i></button>
+        <a class="invite-closing-story" href="index.html">Xem love story <i aria-hidden="true">↗</i></a>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<!-- Lightbox giữ người xem trong mạch thiệp thay vì mở ảnh ở một tab rời. -->
+<div class="invite-gallery-lightbox" id="invite-gallery-lightbox" role="dialog" aria-modal="true" aria-label="Ảnh cưới phóng lớn" aria-hidden="true">
+  <button class="invite-lightbox-close" id="invite-lightbox-close" type="button" aria-label="Đóng ảnh">×</button>
+  <figure>
+    <img id="invite-lightbox-image" src="" alt="">
+    <figcaption id="invite-lightbox-caption"></figcaption>
+  </figure>
+  <p class="invite-lightbox-hint" aria-hidden="true">Chạm bên ngoài hoặc nhấn ESC để đóng</p>
+</div>
+
+<!-- Cảnh chuyển trang nối tấm thiệp với website love story bằng chính các mảnh ký ức. -->
+<div class="invite-story-transition" id="invite-story-transition" role="status" aria-live="polite" aria-hidden="true">
+  <div class="invite-story-transition-glow"></div>
+  <div class="invite-story-transition-photos" aria-hidden="true">
+    <figure><img src="images/anh_gap_go.jpg" alt="" decoding="async"></figure>
+    <figure><img src="images/anh_nen_3.jpg" alt="" decoding="async"></figure>
+    <figure><img src="images/anh_nen_4.jpg" alt="" decoding="async"></figure>
+  </div>
+  <svg class="invite-story-thread" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+    <path pathLength="1" d="M-30 211C164 45 253 267 421 125S699 54 1030 186"></path>
+  </svg>
+  <div class="invite-story-transition-copy">
+    <span>L <i>&amp;</i> B</span>
+    <p>Mọi chuyện bắt đầu từ<br>một ngày rất bình thường.</p>
+    <small>Đang mở câu chuyện của chúng mình</small>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
+  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBVejGgYnZenxBjC11mQ1dbMMogbfm1fVs",
+    authDomain: "my-wedding-project-11aec.firebaseapp.com",
+    projectId: "my-wedding-project-11aec",
+    storageBucket: "my-wedding-project-11aec.firebasestorage.app",
+    messagingSenderId: "727647386545",
+    appId: "1:727647386545:web:8ac2847cf6885937dd5b90",
+    measurementId: "G-TY0NL6QPJT"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  window.firebaseDB = getFirestore(app);
+  window.firebaseStorage = getStorage(app);
+  window.fbCollection = collection;
+  window.fbAddDoc = addDoc;
+  window.fbServerTimestamp = serverTimestamp;
+  window.fbOnSnapshot = onSnapshot;
+  window.fbQuery = query;
+  window.fbOrderBy = orderBy;
+  window.fbGetDocs = getDocs;
+  window.fbRef = ref;
+  window.fbUploadBytes = uploadBytes;
+  window.fbGetDownloadURL = getDownloadURL;
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var body = document.body;
+    var opening = document.getElementById('invite-opening');
+    var openButton = document.getElementById('invite-open-button');
+    var main = document.getElementById('invite-main');
+    var inviteControls = document.querySelector('.invite-controls');
+    var quickNav = document.getElementById('invite-quick-nav');
+    var themeButton = document.getElementById('invite-theme-toggle');
+    var musicButton = document.getElementById('invite-music-toggle');
+    var music = document.getElementById('invite-music');
+    var themeMeta = document.querySelector('meta[name="theme-color"]');
+    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduceMotion) body.classList.add('invite-hero-staged');
+
+    // Parallax có quán tính nhỏ: tạo chiều sâu trước khi mở nhưng không đuổi con trỏ quá mạnh.
+    var parallaxTargetX = 0;
+    var parallaxTargetY = 0;
+    var parallaxX = 0;
+    var parallaxY = 0;
+    var parallaxFrame = 0;
+
+    function renderInviteParallax() {
+      parallaxX += (parallaxTargetX - parallaxX) * 0.085;
+      parallaxY += (parallaxTargetY - parallaxY) * 0.085;
+      if (opening) {
+        opening.style.setProperty('--invite-near-x', (parallaxX * 0.5).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-near-y', (parallaxY * 0.38).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-mid-x', (parallaxX * 0.22).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-mid-y', (parallaxY * 0.17).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-far-x', (parallaxX * -0.26).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-far-y', (parallaxY * -0.2).toFixed(3) + 'rem');
+        opening.style.setProperty('--invite-tilt-x', (parallaxX * 1.25).toFixed(3) + 'deg');
+        opening.style.setProperty('--invite-tilt-y', (parallaxY * -1).toFixed(3) + 'deg');
+      }
+      if (Math.abs(parallaxTargetX - parallaxX) > 0.002 || Math.abs(parallaxTargetY - parallaxY) > 0.002) {
+        parallaxFrame = window.requestAnimationFrame(renderInviteParallax);
+      } else {
+        parallaxFrame = 0;
+      }
+    }
+
+    function scheduleInviteParallax() {
+      if (!parallaxFrame) parallaxFrame = window.requestAnimationFrame(renderInviteParallax);
+    }
+
+    function aimInviteParallax(event) {
+      if (!opening || reduceMotion || opening.classList.contains('is-opening')) return;
+      var rect = opening.getBoundingClientRect();
+      parallaxTargetX = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width - 0.5) * 2));
+      parallaxTargetY = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height - 0.5) * 2));
+      scheduleInviteParallax();
+    }
+
+    function resetInviteParallax() {
+      parallaxTargetX = 0;
+      parallaxTargetY = 0;
+      scheduleInviteParallax();
+    }
+
+    if (opening && !reduceMotion) {
+      opening.addEventListener('pointermove', aimInviteParallax, { passive: true });
+      opening.addEventListener('pointerdown', aimInviteParallax, { passive: true });
+      opening.addEventListener('pointerleave', resetInviteParallax);
+      opening.addEventListener('pointercancel', resetInviteParallax);
+    }
+
+    // Dùng chung khóa theme với website love story để hai trang có cùng trạng thái thị giác.
+    function applyInviteTheme(theme, shouldSave) {
+      var isDark = theme === 'dark';
+      document.documentElement.classList.toggle('invite-dark', isDark);
+      body.classList.toggle('light-mode', !isDark);
+      if (themeButton) {
+        themeButton.setAttribute('aria-pressed', String(isDark));
+        themeButton.setAttribute('aria-label', isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối');
+      }
+      if (themeMeta) themeMeta.setAttribute('content', isDark ? '#0d0e11' : '#f4ede3');
+      if (shouldSave) {
+        try { localStorage.setItem('theme', theme); } catch (error) {}
+      }
+    }
+
+    var initialTheme = document.documentElement.classList.contains('invite-dark') ? 'dark' : 'light';
+    applyInviteTheme(initialTheme, false);
+    if (themeButton) {
+      themeButton.addEventListener('click', function () {
+        applyInviteTheme(body.classList.contains('light-mode') ? 'dark' : 'light', true);
+      });
+    }
+
+    // Nhạc chỉ bắt đầu sau một thao tác chủ động để tuân thủ chính sách autoplay của trình duyệt.
+    function syncMusicButton() {
+      var isPlaying = !!music && !music.paused;
+      if (!musicButton) return;
+      musicButton.classList.toggle('is-playing', isPlaying);
+      musicButton.setAttribute('aria-pressed', String(isPlaying));
+      musicButton.setAttribute('aria-label', isPlaying ? 'Tắt nhạc nền' : 'Bật nhạc nền');
+    }
+
+    function playInviteMusic() {
+      if (!music) return;
+      music.volume = 0.48;
+      var request = music.play();
+      if (request && typeof request.catch === 'function') request.catch(syncMusicButton);
+    }
+
+    if (music) {
+      music.addEventListener('play', syncMusicButton);
+      music.addEventListener('pause', syncMusicButton);
+    }
+    if (musicButton) {
+      musicButton.addEventListener('click', function () {
+        if (!music) return;
+        if (music.paused) playInviteMusic();
+        else music.pause();
+      });
+    }
+
+    // Giữ focus trong intro cho tới khi khách chủ động mở thiệp.
+    if (main) main.inert = true;
+    if (quickNav) quickNav.inert = true;
+    if (openButton) openButton.focus({ preventScroll: true });
+
+    function finishOpening() {
+      if (!opening || opening.hidden) return;
+      opening.hidden = true;
+      opening.setAttribute('aria-hidden', 'true');
+      document.documentElement.classList.remove('invitation-locked');
+      body.classList.remove('invitation-locked');
+      body.classList.remove('invitation-opening');
+      body.classList.add('invitation-opened');
+      window.requestAnimationFrame(scheduleInviteScrollFlow);
+      opening.removeAttribute('aria-busy');
+      if (main) main.inert = false;
+      if (quickNav) quickNav.inert = false;
+      var root = document.documentElement;
+      var previousScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      function resetInvitationScroll() {
+        root.scrollTop = 0;
+        body.scrollTop = 0;
+        window.scrollTo(0, 0);
+      }
+      resetInvitationScroll();
+      window.requestAnimationFrame(function () {
+        resetInvitationScroll();
+        window.requestAnimationFrame(function () {
+          resetInvitationScroll();
+          root.style.scrollBehavior = previousScrollBehavior;
+        });
+      });
+      body.setAttribute('tabindex', '-1');
+      body.focus({ preventScroll: true });
+      window.requestAnimationFrame(function () { body.removeAttribute('tabindex'); });
+    }
+
+    function openInvitation() {
+      if (!opening || opening.classList.contains('is-opening')) return;
+      playInviteMusic();
+      resetInviteParallax();
+      body.classList.add('invitation-opening');
+      opening.setAttribute('aria-busy', 'true');
+      if (openButton) openButton.disabled = true;
+      opening.classList.add('is-opening');
+      window.setTimeout(finishOpening, reduceMotion ? 260 : 4600);
+    }
+
+    if (openButton) openButton.addEventListener('click', openInvitation);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && body.classList.contains('invitation-locked')) openInvitation();
+    });
+
+    function updateQuickNav() {
+      body.classList.toggle('invitation-nav-visible', body.classList.contains('invitation-opened') && window.scrollY > 140);
+    }
+    window.addEventListener('scroll', updateQuickNav, { passive: true });
+
+    // Đường cây bên mép được vẽ theo tổng tiến trình trang, hoa nở rồi khép lại khi cuộn ngược.
+    var scrollVinePath = document.getElementById('invite-scroll-vine-progress');
+    var scrollVineNodes = document.querySelectorAll('.invite-vine-node');
+    var ambientMorning = document.querySelector('.invite-ambient-light .is-morning');
+    var ambientGolden = document.querySelector('.invite-ambient-light .is-golden');
+    var ambientCinematic = document.querySelector('.invite-ambient-light .is-cinematic');
+    var ambientDusk = document.querySelector('.invite-ambient-light .is-dusk');
+    var ambientStops = null;
+    var scrollFlowFrame = 0;
+
+    function smoothInviteStep(start, end, value) {
+      var position = Math.max(0, Math.min(1, (value - start) / Math.max(1, end - start)));
+      return position * position * (3 - 2 * position);
+    }
+
+    function measureInviteAmbientStops() {
+      var eventsSection = document.getElementById('events');
+      var gallerySection = document.querySelector('.invite-gallery');
+      var practicalSection = document.getElementById('schedule');
+      var faqSection = document.getElementById('faq');
+      var photoSection = document.querySelector('.invite-photo-break');
+      var contactSection = document.getElementById('contact');
+      var closingSection = document.querySelector('.invite-closing');
+      ambientStops = {
+        events: eventsSection ? eventsSection.offsetTop : window.innerHeight,
+        gallery: gallerySection ? gallerySection.offsetTop : window.innerHeight * 2,
+        practical: practicalSection ? practicalSection.offsetTop : window.innerHeight * 3,
+        faq: faqSection ? faqSection.offsetTop : window.innerHeight * 4,
+        photo: photoSection ? photoSection.offsetTop : window.innerHeight * 5,
+        contact: contactSection ? contactSection.offsetTop : window.innerHeight * 6,
+        closing: closingSection ? closingSection.offsetTop : window.innerHeight * 7
+      };
+    }
+
+    function updateInviteScrollFlow() {
+      scrollFlowFrame = 0;
+      var maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      var progress = body.classList.contains('invitation-opened') ? Math.max(0, Math.min(1, window.scrollY / maxScroll)) : 0;
+      if (scrollVinePath) scrollVinePath.style.strokeDashoffset = String(1000 - progress * 1000);
+      scrollVineNodes.forEach(function (node) {
+        node.classList.toggle('is-blooming', progress >= Number(node.dataset.threshold || 0));
+      });
+      // Crossfade theo vị trí section giúp từng chương có ánh sáng riêng, không phụ thuộc tổng chiều dài trang.
+      if (!ambientStops) measureInviteAmbientStops();
+      var readingLine = window.scrollY + window.innerHeight * 0.48;
+      var morningLevel = 1 - smoothInviteStep(ambientStops.events, ambientStops.gallery, readingLine);
+      var goldenLevel = smoothInviteStep(ambientStops.events, ambientStops.gallery, readingLine) *
+        (1 - smoothInviteStep(ambientStops.practical, ambientStops.faq, readingLine));
+      var cinematicLevel = smoothInviteStep(ambientStops.faq, ambientStops.photo, readingLine) *
+        (1 - smoothInviteStep(ambientStops.contact, ambientStops.closing, readingLine));
+      var duskLevel = smoothInviteStep(ambientStops.photo, ambientStops.closing, readingLine);
+      if (ambientMorning) {
+        ambientMorning.style.opacity = String((morningLevel * 0.78).toFixed(3));
+        if (!reduceMotion) ambientMorning.style.transform = 'translate3d(' + (progress * 4).toFixed(2) + '%,0,0)';
+      }
+      if (ambientGolden) {
+        ambientGolden.style.opacity = String((goldenLevel * 0.72).toFixed(3));
+        if (!reduceMotion) ambientGolden.style.transform = 'translate3d(' + ((progress - 0.5) * -5).toFixed(2) + '%,0,0)';
+      }
+      if (ambientCinematic) ambientCinematic.style.opacity = String((cinematicLevel * 0.62).toFixed(3));
+      if (ambientDusk) ambientDusk.style.opacity = String((duskLevel * 0.68).toFixed(3));
+    }
+
+    function scheduleInviteScrollFlow() {
+      if (!scrollFlowFrame) scrollFlowFrame = window.requestAnimationFrame(updateInviteScrollFlow);
+    }
+
+    window.addEventListener('scroll', scheduleInviteScrollFlow, { passive: true });
+    window.addEventListener('resize', function () {
+      ambientStops = null;
+      scheduleInviteScrollFlow();
+    }, { passive: true });
+    updateInviteScrollFlow();
+
+    var revealItems = document.querySelectorAll('.invite-reveal');
+    function showInviteReveal(item) {
+      var galleryImage = item.classList.contains('invite-gallery-card') ? item.querySelector('img') : null;
+      if (galleryImage && !galleryImage.complete) {
+        var revealAfterImage = function () { item.classList.add('is-visible'); };
+        galleryImage.addEventListener('load', revealAfterImage, { once: true });
+        galleryImage.addEventListener('error', revealAfterImage, { once: true });
+        return;
+      }
+      item.classList.add('is-visible');
+    }
+    if ('IntersectionObserver' in window && !reduceMotion) {
+      var revealObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          showInviteReveal(entry.target);
+          revealObserver.unobserve(entry.target);
+        });
+      }, { threshold: 0.14, rootMargin: '0px 0px -5% 0px' });
+      revealItems.forEach(function (item) { revealObserver.observe(item); });
+    } else {
+      revealItems.forEach(showInviteReveal);
+    }
+
+    var weddingTime = new Date('2026-10-20T17:30:00+07:00').getTime();
+    var dayEl = document.getElementById('countdown-days');
+    var hourEl = document.getElementById('countdown-hours');
+    var minuteEl = document.getElementById('countdown-minutes');
+    var countdown = document.getElementById('invite-countdown');
+
+    function updateCountdown() {
+      if (!countdown || !dayEl || !hourEl || !minuteEl) return;
+      var distance = weddingTime - Date.now();
+      if (distance <= 0) {
+        countdown.innerHTML = '<p class="invite-countdown-message">Cảm ơn bạn đã cùng chúng mình đi qua ngày đặc biệt ấy.</p>';
+        return;
+      }
+      dayEl.textContent = String(Math.floor(distance / 86400000)).padStart(2, '0');
+      hourEl.textContent = String(Math.floor((distance % 86400000) / 3600000)).padStart(2, '0');
+      minuteEl.textContent = String(Math.floor((distance % 3600000) / 60000)).padStart(2, '0');
+    }
+    updateCountdown();
+    window.setInterval(updateCountdown, 60000);
+
+    document.querySelectorAll('.invite-calendar-link').forEach(function (link) {
+      var query = new URLSearchParams({
+        action: 'TEMPLATE',
+        text: link.dataset.title || 'Lễ cưới',
+        dates: link.dataset.dates || '',
+        ctz: 'Asia/Ho_Chi_Minh',
+        location: link.dataset.location || '',
+        details: 'Trân trọng kính mời Quý khách đến chung vui cùng gia đình chúng mình.'
+      });
+      link.href = 'https://calendar.google.com/calendar/render?' + query.toString();
+      link.target = '_blank';
+      link.rel = 'noopener';
+    });
+
+    // Album mở trong một lightbox tối giản để giữ nguyên mạch cảm xúc của tấm thiệp.
+    var galleryLightbox = document.getElementById('invite-gallery-lightbox');
+    var galleryLightboxImage = document.getElementById('invite-lightbox-image');
+    var galleryLightboxCaption = document.getElementById('invite-lightbox-caption');
+    var galleryLightboxClose = document.getElementById('invite-lightbox-close');
+    var galleryReturnFocus = null;
+    var galleryPreviousOverflow = '';
+
+    function closeInviteGallery() {
+      if (!galleryLightbox || !galleryLightbox.classList.contains('is-open')) return;
+      galleryLightbox.classList.remove('is-open');
+      galleryLightbox.setAttribute('aria-hidden', 'true');
+      if (main) main.inert = false;
+      if (quickNav) quickNav.inert = false;
+      if (inviteControls) inviteControls.inert = false;
+      body.style.overflow = galleryPreviousOverflow;
+      if (galleryReturnFocus) galleryReturnFocus.focus({ preventScroll: true });
+    }
+
+    document.querySelectorAll('.invite-gallery-open').forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (!galleryLightbox || !galleryLightboxImage) return;
+        var sourceImage = button.querySelector('img');
+        var caption = button.closest('figure').querySelector('figcaption');
+        if (!sourceImage) return;
+        galleryReturnFocus = button;
+        galleryPreviousOverflow = body.style.overflow;
+        galleryLightboxImage.src = sourceImage.currentSrc || sourceImage.src;
+        galleryLightboxImage.alt = sourceImage.alt;
+        if (galleryLightboxCaption) galleryLightboxCaption.textContent = caption ? caption.textContent : '';
+        galleryLightbox.classList.add('is-open');
+        galleryLightbox.setAttribute('aria-hidden', 'false');
+        if (main) main.inert = true;
+        if (quickNav) quickNav.inert = true;
+        if (inviteControls) inviteControls.inert = true;
+        body.style.overflow = 'hidden';
+        if (galleryLightboxClose) galleryLightboxClose.focus({ preventScroll: true });
+      });
+    });
+    if (galleryLightboxClose) galleryLightboxClose.addEventListener('click', closeInviteGallery);
+    if (galleryLightbox) {
+      galleryLightbox.addEventListener('click', function (event) {
+        if (event.target === galleryLightbox) closeInviteGallery();
+      });
+    }
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeInviteGallery();
+    });
+
+    var closing = document.querySelector('.invite-closing');
+    if (closing && music && 'IntersectionObserver' in window) {
+      var closingObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          music.volume = entry.isIntersecting && entry.intersectionRatio > 0.35 ? 0.32 : 0.48;
+        });
+      }, { threshold: [0, 0.35, 0.7] });
+      closingObserver.observe(closing);
+    }
+
+    var replayButton = document.getElementById('invite-replay-button');
+    if (replayButton) {
+      replayButton.addEventListener('click', function () {
+        window.location.reload();
+      });
+    }
+
+    // Story Portal thay cú chuyển trang đột ngột bằng một cảnh nối ngắn có chủ đích.
+    var storyTransition = document.getElementById('invite-story-transition');
+    var storyTransitionTimer = 0;
+    var storyFadeFrame = 0;
+
+    function fadeInviteMusicForStory() {
+      if (!music || music.paused) return;
+      var startVolume = music.volume;
+      var startTime = performance.now();
+      function fadeFrame(now) {
+        var fadeProgress = Math.min(1, (now - startTime) / 1800);
+        music.volume = Math.max(0.04, startVolume * (1 - fadeProgress * 0.9));
+        if (fadeProgress < 1) storyFadeFrame = window.requestAnimationFrame(fadeFrame);
+      }
+      storyFadeFrame = window.requestAnimationFrame(fadeFrame);
+    }
+
+    function openLoveStory(event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var destination = event.currentTarget.href;
+      if (!destination) return;
+      event.preventDefault();
+      if (reduceMotion || !storyTransition) {
+        window.location.assign(destination);
+        return;
+      }
+      if (body.classList.contains('invite-story-leaving')) return;
+      body.classList.add('invite-story-leaving');
+      storyTransition.classList.add('is-active');
+      storyTransition.setAttribute('aria-hidden', 'false');
+      if (main) main.inert = true;
+      if (quickNav) quickNav.inert = true;
+      if (inviteControls) inviteControls.inert = true;
+      fadeInviteMusicForStory();
+      storyTransitionTimer = window.setTimeout(function () {
+        window.location.assign(destination);
+      }, 2200);
+    }
+
+    document.querySelectorAll('.invite-love-story-link, .invite-closing-story').forEach(function (link) {
+      link.addEventListener('click', openLoveStory);
+    });
+    window.addEventListener('pageshow', function () {
+      window.clearTimeout(storyTransitionTimer);
+      if (storyFadeFrame) window.cancelAnimationFrame(storyFadeFrame);
+      body.classList.remove('invite-story-leaving');
+      if (main) main.inert = false;
+      if (quickNav) quickNav.inert = false;
+      if (inviteControls) inviteControls.inert = false;
+      if (storyTransition) {
+        storyTransition.classList.remove('is-active');
+        storyTransition.setAttribute('aria-hidden', 'true');
+      }
+      if (music && !music.paused) music.volume = 0.48;
+    });
+  });
+</script>
+</body>
+</html>

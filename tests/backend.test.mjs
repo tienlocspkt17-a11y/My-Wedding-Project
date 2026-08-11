@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { validateWish, validateSongSuggestion, validatePhotoMetadata, normalizeSlug, publicGuest, escapeSheetCell } from '../functions/_lib/validation.js';
 import { onRequestPost as submitWish } from '../functions/api/wishes.js';
 import { weddingDayState } from '../functions/_lib/wedding-day.js';
 import { guestPresentation, normalizeGuestDelivery, createGuestSlug, invitationUrl } from '../functions/_lib/guest-schema.js';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
+test('personalized invitation uses root-relative static assets', async () => {
+  const html = await readFile(new URL('../invitation.html', import.meta.url), 'utf8');
+  assert.match(html, /href="\/style\.css"/);
+  assert.match(html, /src="\/api-client\.js"/);
+  assert.doesNotMatch(html, /(?:href|src)="(?:style\.css|api-client\.js|nhac_nen\.mp3|images\/|index\.html)/);
+});
 
 test('validation cleans and bounds public input', () => {
   const wish = validateWish({

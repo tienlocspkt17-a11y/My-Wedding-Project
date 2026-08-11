@@ -5,6 +5,9 @@ GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END P
 
 # Chia sẻ Google Sheet cho GOOGLE_SERVICE_ACCOUNT_EMAIL với quyền Editor.
 GOOGLE_SHEETS_ID=""
+GOOGLE_GUESTS_RANGE="Guests!A:I"
+PUBLIC_SITE_URL="http://localhost:8787"
+GUEST_SYNC_ENABLED="false"
 
 # Không bắt buộc. Chỉ cấu hình cả hai khóa cùng lúc khi bật Turnstile.
 TURNSTILE_SITE_KEY=""

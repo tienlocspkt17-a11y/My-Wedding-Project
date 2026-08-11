@@ -1,10 +1,9 @@
 [
   {
     "slug": "anh-minh-7k3p9",
-    "displayName": "Anh Minh & chị Anh",
-    "salutation": "Anh Minh và chị Anh thân mến",
-    "personalMessage": "Rất mong được gặp anh chị trong ngày vui của chúng mình.",
-    "partySize": 2,
+    "name": "Minh",
+    "group": "anh",
+    "delivery": "online",
     "active": true
   }
 ]

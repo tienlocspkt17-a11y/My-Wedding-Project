@@ -82,6 +82,9 @@ SONG_SUGGESTIONS_COLLECTION=songSuggestions
 PHOTOS_COLLECTION=photoSubmissions
 GOOGLE_SONGS_RANGE=Song Suggestions!A:G
 GOOGLE_PHOTOS_RANGE=Photo Index!A:J
+GOOGLE_GUESTS_RANGE=Guests!A:I
+PUBLIC_SITE_URL=https://ten-mien-cua-ban
+GUEST_SYNC_ENABLED=true
 WEDDING_DAY_START=2026-10-20T00:00:00+07:00
 WEDDING_DAY_END=2026-10-21T06:00:00+07:00
 ```
@@ -117,7 +120,40 @@ TURNSTILE_SECRET_KEY  (Secret)
 
 Frontend sẽ tự tải widget khi API trả về site key. Không cấu hình riêng một trong hai khóa.
 
-## 5. Tạo thiệp riêng cho khách
+## 5. Tạo thiệp riêng cho khách từ Google Sheets
+
+Tạo một tab `Guests` trong cùng spreadsheet. Dòng đầu cần đúng thứ tự:
+
+```text
+guest_id | name | group | delivery | slug | invite_url | status | created_at | updated_at
+```
+
+Mỗi khách nằm trên một dòng. Chỉ cần nhập `name`, `group`, `delivery` và `status`:
+
+```text
+             | Minh | friend | online   | | | active   | |
+             | Huy  | anh    | online   | | | active   | |
+             | Lan  | chi    | online   | | | active   | |
+             | An   | em     | online   | | | active   | |
+             | Bác  | anh    | physical | | | active   | |
+```
+
+- `group` nhận `friend`, `anh`, `chi`, `em`. Nhóm `em` dùng cho cả nam và nữ.
+- `delivery=online`: Worker tạo `guest_id`, slug ngẫu nhiên, URL và document Firestore.
+- `delivery=physical`: không tạo URL; nếu đổi từ online sang physical thì URL cũ bị vô hiệu hóa.
+- `status=disabled`: giữ dữ liệu nhưng URL không mở được.
+- Cron chạy mỗi 10 phút. Dòng không đổi sẽ không ghi lại Firestore, giúp tiết kiệm quota.
+
+Có thể đồng bộ ngay mà không chờ cron:
+
+```bash
+curl -X POST "https://ten-mien-cua-ban/api/admin/sync-guests" \
+  -H "Authorization: Bearer ADMIN_API_SECRET"
+```
+
+Worker sẽ ghi `guest_id`, `slug`, `invite_url`, `created_at` và `updated_at` trở lại đúng dòng trong Sheet.
+
+Document ID trong collection `guests` chính là slug bí mật. Slug luôn có phần ngẫu nhiên, không dùng tên đơn thuần:
 
 Document ID trong collection `guests` chính là slug bí mật. Nên dùng slug có phần ngẫu nhiên, không dùng tên đơn thuần:
 
@@ -126,25 +162,27 @@ minh-anh-7k3p9
 gia-dinh-co-lan-p4m8x2
 ```
 
-Schema document:
+Schema document được tạo tự động:
 
 ```json
 {
-  "displayName": "Gia đình anh Minh",
-  "salutation": "Gia đình anh Minh",
-  "personalMessage": "Rất mong được gặp cả gia đình trong ngày vui của chúng mình.",
-  "partySize": 4,
+  "guestId": "G-ab12cd34ef",
+  "displayName": "Anh Minh",
+  "salutation": "anh Minh",
+  "group": "anh",
+  "delivery": "online",
+  "partySize": 1,
   "active": true
 }
 ```
 
-Có thể tạo tối đa 20 khách mỗi request bằng endpoint admin:
+Endpoint JSON cũ vẫn được giữ để tương thích và hỗ trợ tối đa 20 khách mỗi request:
 
 ```bash
 curl -X POST "https://ten-mien-cua-ban/api/admin/guests" \
   -H "Authorization: Bearer ADMIN_API_SECRET" \
   -H "Content-Type: application/json" \
-  --data '{"guests":[{"slug":"minh-anh-7k3p9","displayName":"Anh Minh & chị Anh","partySize":2}]}'
+  --data '{"guests":[{"slug":"anh-minh-7k3p9","name":"Minh","group":"anh","delivery":"online"}]}'
 ```
 
 Link gửi cho khách:

@@ -9,5 +9,6 @@ export function onRequestGet({ env }) {
     photoStorageConfigured: Boolean(env.PHOTO_BUCKET),
     rateLimitConfigured: Boolean(env.RATE_LIMIT),
     turnstileConfigured: Boolean(env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY),
+    guestSheetSyncConfigured: Boolean(env.GOOGLE_SHEETS_ID && env.GOOGLE_GUESTS_RANGE && env.PUBLIC_SITE_URL),
   });
 }

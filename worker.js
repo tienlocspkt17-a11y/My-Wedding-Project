@@ -8,7 +8,9 @@ import { onRequestGet as getInvitation } from './functions/api/invitations/[slug
 import { onRequestPost as retryBackups } from './functions/api/admin/retry-backups.js';
 import { onRequestPost as upsertGuests } from './functions/api/admin/guests.js';
 import { onRequestPost as moderateSubmission } from './functions/api/admin/moderate.js';
+import { onRequestPost as syncGuests } from './functions/api/admin/sync-guests.js';
 import { onRequest as renderInvitation } from './functions/invite/[slug].js';
+import { syncGuestsFromSheet } from './functions/_lib/guest-sync.js';
 
 function functionContext(request, env, executionContext, params = {}) {
   return {
@@ -78,6 +80,9 @@ async function routeApi(request, env, executionContext, url) {
   if (url.pathname === '/api/admin/guests') {
     return request.method === 'POST' ? upsertGuests(context) : methodNotAllowed(['POST']);
   }
+  if (url.pathname === '/api/admin/sync-guests') {
+    return request.method === 'POST' ? syncGuests(context) : methodNotAllowed(['POST']);
+  }
   if (url.pathname === '/api/admin/moderate') {
     return request.method === 'POST' ? moderateSubmission(context) : methodNotAllowed(['POST']);
   }
@@ -108,5 +113,9 @@ export default {
     }
 
     return withSecurityHeaders(response);
+  },
+  scheduled(controller, env, executionContext) {
+    if (String(env.GUEST_SYNC_ENABLED).toLowerCase() !== 'true') return;
+    executionContext.waitUntil(syncGuestsFromSheet(env).catch(error => console.error('Guest Sheet sync failed', error)));
   },
 };

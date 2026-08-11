@@ -28,6 +28,46 @@ async function appendRow(env, range, values) {
   return true;
 }
 
+export async function readSheetRange(env, range) {
+  if (!env.GOOGLE_SHEETS_ID) return [];
+  const token = await getGoogleAccessToken(env, [SHEETS_SCOPE]);
+  const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SHEETS_ID)}/values/${encodeURIComponent(range)}`);
+  url.searchParams.set('majorDimension', 'ROWS');
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Sheets read failed (${response.status}): ${detail.slice(0, 300)}`);
+  }
+  const payload = await response.json();
+  return Array.isArray(payload.values) ? payload.values : [];
+}
+
+export async function updateSheetRows(env, updates) {
+  if (!env.GOOGLE_SHEETS_ID || !updates.length) return false;
+  const token = await getGoogleAccessToken(env, [SHEETS_SCOPE]);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SHEETS_ID)}/values:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      valueInputOption: 'RAW',
+      data: updates.map(update => ({
+        range: update.range,
+        majorDimension: 'ROWS',
+        values: [update.values.map(escapeSheetCell)],
+      })),
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Sheets batch update failed (${response.status}): ${detail.slice(0, 300)}`);
+  }
+  return true;
+}
+
 function appendWishToSheet(env, wish) {
   return appendRow(env, env.GOOGLE_SHEETS_RANGE || 'Wishes!A:G', [
     wish.createdAt || new Date().toISOString(), wish.name, wish.message, wish.source, wish.guestSlug, wish.id, 'published',

@@ -4,6 +4,7 @@ import { webcrypto } from 'node:crypto';
 import { validateWish, validateSongSuggestion, validatePhotoMetadata, normalizeSlug, publicGuest, escapeSheetCell } from '../functions/_lib/validation.js';
 import { onRequestPost as submitWish } from '../functions/api/wishes.js';
 import { weddingDayState } from '../functions/_lib/wedding-day.js';
+import { guestPresentation, normalizeGuestDelivery, createGuestSlug, invitationUrl } from '../functions/_lib/guest-schema.js';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -35,6 +36,22 @@ test('guest response exposes only invitation fields', () => {
     partySize: 4,
   });
   assert.equal(publicGuest({ displayName: 'Khách', active: false }), null);
+});
+
+test('guest Sheet schema maps the four invitation groups safely', () => {
+  assert.deepEqual(guestPresentation('  Minh  ', 'Bạn bè'), {
+    name: 'Minh',
+    group: 'friend',
+    displayName: 'Bạn Minh',
+    salutation: 'bạn Minh',
+  });
+  assert.equal(guestPresentation('Huy', 'anh').displayName, 'Anh Huy');
+  assert.equal(guestPresentation('Lan', 'chị').salutation, 'chị Lan');
+  assert.equal(guestPresentation('An', 'em').displayName, 'Em An');
+  assert.equal(normalizeGuestDelivery('physical'), 'physical');
+  assert.throws(() => guestPresentation('Khách', 'nguoi-lon'));
+  assert.match(createGuestSlug('Nguyễn Thị Ánh'), /^nguyen-thi-anh-[a-z0-9]{6}$/);
+  assert.equal(invitationUrl('https://wedding.example/', 'anh-minh-ab1234'), 'https://wedding.example/invite/anh-minh-ab1234');
 });
 
 test('sheet cells cannot become spreadsheet formulas', () => {

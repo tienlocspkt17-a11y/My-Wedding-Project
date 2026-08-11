@@ -13,6 +13,8 @@
       if (isSafari) document.documentElement.classList.add('is-safari');
       var useMobileAssets = matchMedia('(max-width: 820px), (pointer: coarse)').matches;
       window.storyUseMobileAssets = useMobileAssets;
+      window.storyMobilePerformance = useMobileAssets || /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+      if (window.storyMobilePerformance) document.documentElement.classList.add('is-mobile-performance');
       window.storyImageSource = function (source) {
         if (!useMobileAssets || typeof source !== 'string' || !/^images\/[^/]+\.jpg(?:[?#].*)?$/i.test(source)) return source;
         return source.replace(/^images\//, 'images/mobile/');
@@ -309,7 +311,7 @@
       </div>
 
       <div class="fog-container" id="fog-container">
-        <canvas id="fog-canvas" aria-label="Chạm và kéo để lau lớp sương trên cửa kính"></canvas>
+        <canvas id="fog-canvas" width="1" height="1" aria-label="Chạm và kéo để lau lớp sương trên cửa kính"></canvas>
         <div class="wipe-instruction" id="wipe-instruction">
           <span class="wipe-icon" aria-hidden="true">◌</span>
           <span class="wipe-copy">Chạm và lau lớp sương mờ</span>
@@ -391,8 +393,9 @@
   <div class="a1-scroll-spacer" aria-hidden="true"></div>
 </section>
 
-<!-- Hộp tàng hình chứa nội dung bên dưới -->
-<div id="hidden-journey" style="display: none; opacity: 0; transition: opacity 1.5s ease;">
+<!-- ACT II luôn giữ chỗ sau khi Rewind mở khóa; media bên trong được lifecycle
+     controller đánh thức theo viewport để không làm đổi chiều cao trang khi cuộn. -->
+<div id="hidden-journey">
 
 
 <!-- ACT 2: YÊU -->
@@ -649,7 +652,8 @@
         <p>Scroll để lấy nét chiếc nhẫn, hoặc tự tay điều chỉnh vòng tiêu cự.</p>
       </div>
       <div class="epilogue-focus-frame">
-        <picture><source media="(max-width: 820px), (pointer: coarse)" srcset="images/mobile/anh_cau_hon.jpg"><img src="images/anh_cau_hon.jpg" alt="Chiếc nhẫn trong khoảnh khắc cầu hôn" class="focus-img" id="focus-img" loading="lazy" decoding="async"></picture>
+        <picture class="focus-picture focus-picture-blur" aria-hidden="true"><source media="(max-width: 820px), (pointer: coarse)" srcset="images/mobile/anh_cau_hon_blur.jpg"><img src="images/anh_cau_hon_blur.jpg" alt="" class="focus-img focus-img-blur" id="focus-blur-img" loading="lazy" decoding="async"></picture>
+        <picture class="focus-picture focus-picture-clear"><source media="(max-width: 820px), (pointer: coarse)" srcset="images/mobile/anh_cau_hon.jpg"><img src="images/anh_cau_hon.jpg" alt="Chiếc nhẫn trong khoảnh khắc cầu hôn" class="focus-img focus-img-clear" id="focus-img" loading="lazy" decoding="async"></picture>
         <div class="focus-peaking" id="focus-peaking" aria-hidden="true"></div>
         <div class="epilogue-aperture" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <div class="proposal-answer" id="proposal-answer">
@@ -856,8 +860,11 @@
     <p class="eyebrow">End Credits · Soundtrack</p>
     <h2 class="section-title">Những bài hát đi cùng câu chuyện</h2>
     <p class="section-sub center">Những bài hát gắn liền với câu chuyện của chúng mình.</p>
-    <div class="playlist-embed">
-      <iframe src="https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?utm_source=generator" width="100%" height="380" style="border:0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" title="Playlist của chúng mình"></iframe>
+    <div class="playlist-embed spotify-facade" id="spotify-embed" data-spotify-src="https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?utm_source=generator">
+      <span class="spotify-facade-icon" aria-hidden="true">♫</span>
+      <strong>Soundtrack của chúng mình</strong>
+      <p>Playlist chỉ được tải khi bạn muốn nghe, để hành trình cuộn luôn nhẹ.</p>
+      <button class="btn outline" id="spotify-load" type="button">Mở playlist</button>
     </div>
     <div class="playlist-songs">
       <div class="song-item glass-shine">
@@ -1045,15 +1052,20 @@ import * as THREE from 'three';
 function hasWebGL() {
   try {
     const c = document.createElement('canvas');
-    return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    const context = window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl'));
+    const supported = Boolean(context);
+    context?.getExtension('WEBGL_lose_context')?.loseContext();
+    c.width = 1;
+    c.height = 1;
+    return supported;
   } catch (e) { return false; }
 }
 
 const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const overlay = document.getElementById('overlay-3d');
-const container = document.getElementById('canvas-container');
-const hint = document.getElementById('hint-text');
-const skipBtn = document.getElementById('skip-btn');
+let overlay = document.getElementById('overlay-3d');
+let container = document.getElementById('canvas-container');
+let hint = document.getElementById('hint-text');
+let skipBtn = document.getElementById('skip-btn');
 let introStopRequested = false;
 
 window.addEventListener('wedding:intro-stop', () => {
@@ -1082,6 +1094,7 @@ if (!hasWebGL() || prefersReducedMotion) {
 }
 
 function runIntro() {
+  const introListeners = new AbortController();
   const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
   const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) < 500;
   const isLowPowerDevice = isCoarsePointer || isSmallScreen;
@@ -1089,7 +1102,7 @@ function runIntro() {
   // Phân bổ hạt và pixel ratio theo năng lực thiết bị để tránh quá tải GPU.
   const limitedHardware = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
   // Giữ RAF 60 Hz, giảm lượng vertex/pixel mỗi frame trên GPU mobile/Safari.
-  const safariRendering = Boolean(window.storyIsSafari);
+  const safariRendering = Boolean(window.storyIsSafari || window.storyMobilePerformance);
   const PARTICLE_COUNT = isLowPowerDevice || limitedHardware ? 1600 : (safariRendering ? 3400 : 4600);
   const MAX_PIXEL_RATIO = isLowPowerDevice || limitedHardware ? 1 : (safariRendering ? 1.25 : 1.6);
   const TUNNEL_LENGTH = 80;
@@ -1295,10 +1308,13 @@ function runIntro() {
   }
 
   function applyFlightColor(progress) {
+    const colorStep = Math.floor(progress * 120);
+    if (colorStep === applyFlightColor.lastStep) return;
+    applyFlightColor.lastStep = colorStep;
     const base = colorAtProgress(progress * 1.2);
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const idx = i * 3;
-      const variation = 0.85 + Math.random() * 0.15;
+      const variation = 0.85 + speeds[i] * 0.15;
       colors[idx] = base.r * variation; colors[idx + 1] = base.g * variation; colors[idx + 2] = base.b * variation;
     }
     colAttr.needsUpdate = true;
@@ -1369,7 +1385,7 @@ function runIntro() {
     if (disposed) return;
     disposed = true;
     if (rafId !== null) cancelAnimationFrame(rafId);
-    window.removeEventListener('resize', onResize);
+    introListeners.abort();
     geometry.dispose();
     material.dispose();
     scene.clear();
@@ -1381,12 +1397,17 @@ function runIntro() {
     renderer.domElement.width = 1;
     renderer.domElement.height = 1;
     if (renderer.domElement.isConnected) renderer.domElement.remove();
+    if (container) container.replaceChildren();
+    overlay = null;
+    container = null;
+    hint = null;
+    skipBtn = null;
   }
 
   window.addEventListener('wedding:intro-stop', () => {
     // Giữ canvas trong lúc overlay crossfade rồi mới giải phóng GPU.
     setTimeout(disposeIntro, 1500);
-  }, { once: true });
+  }, { once: true, signal: introListeners.signal });
 
   function triggerSiteReveal() {
     if (revealed) return;
@@ -1440,7 +1461,7 @@ function runIntro() {
     camera.aspect = w / h; camera.updateProjectionMatrix();
     renderer.setSize(w, h);
   }
-  window.addEventListener('resize', onResize);
+  window.addEventListener('resize', onResize, { passive: true, signal: introListeners.signal });
 
   function startFlight() {
     if (isFlying) return;
@@ -1455,56 +1476,51 @@ function runIntro() {
     if(window.playBackgroundMusic) window.playBackgroundMusic();
   }
 
-  window.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startFlight(); } });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startFlight(); } }, { signal: introListeners.signal });
   
   let touchX = 0, touchY = 0;
-  overlay.addEventListener('touchstart', (e) => { const t = e.touches[0]; touchX = t.clientX; touchY = t.clientY; }, { passive: true });
+  overlay.addEventListener('touchstart', (e) => { const t = e.touches[0]; touchX = t.clientX; touchY = t.clientY; }, { passive: true, signal: introListeners.signal });
   overlay.addEventListener('touchend', (e) => {
     if (isFlying) return;
     const t = e.changedTouches[0];
     if (Math.abs(t.clientX - touchX) < 30 && Math.abs(t.clientY - touchY) < 30) startFlight();
-  }, { passive: true });
-  overlay.addEventListener('click', (e) => { if (e.target === skipBtn) return; startFlight(); });
+  }, { passive: true, signal: introListeners.signal });
+  overlay.addEventListener('click', (e) => { if (e.target === skipBtn) return; startFlight(); }, { signal: introListeners.signal });
 
-  skipBtn.addEventListener('click', (e) => { e.stopPropagation(); skipIntro(); });
+  skipBtn.addEventListener('click', (e) => { e.stopPropagation(); skipIntro(); }, { signal: introListeners.signal });
 }
 </script>
 
-<script type="module">
-  // 1. Import các hàm cần thiết từ SDK 12.17.1
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-  import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js";
-
-  // 2. Cấu hình Firebase của bạn
-  const firebaseConfig = {
-    apiKey: "AIzaSyBVejGgYnZenxBjC11mQ1dbMMogbfm1fVs",
-    authDomain: "my-wedding-project-11aec.firebaseapp.com",
-    projectId: "my-wedding-project-11aec",
-    storageBucket: "my-wedding-project-11aec.firebasestorage.app",
-    messagingSenderId: "727647386545",
-    appId: "1:727647386545:web:8ac2847cf6885937dd5b90",
-    measurementId: "G-TY0NL6QPJT"
+<script>
+  // Firebase chỉ tải khi một tính năng backend thực sự yêu cầu; tránh giữ
+  // Firestore + Storage trong heap suốt phần cinematic của love story.
+  window.loadFirebaseServices = function () {
+    if (window.firebaseServicesPromise) return window.firebaseServicesPromise;
+    window.firebaseServicesPromise = Promise.all([
+      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js'),
+      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js')
+    ]).then(function (modules) {
+      var appApi = modules[0], firestoreApi = modules[1], storageApi = modules[2];
+      var app = appApi.initializeApp({
+        apiKey: 'AIzaSyBVejGgYnZenxBjC11mQ1dbMMogbfm1fVs',
+        authDomain: 'my-wedding-project-11aec.firebaseapp.com',
+        projectId: 'my-wedding-project-11aec',
+        storageBucket: 'my-wedding-project-11aec.firebasestorage.app',
+        messagingSenderId: '727647386545',
+        appId: '1:727647386545:web:8ac2847cf6885937dd5b90',
+        measurementId: 'G-TY0NL6QPJT'
+      });
+      return {
+        app: app,
+        db: firestoreApi.getFirestore(app),
+        storage: storageApi.getStorage(app),
+        firestore: firestoreApi,
+        storageApi: storageApi
+      };
+    });
+    return window.firebaseServicesPromise;
   };
-
-  // 3. Khởi tạo Firebase
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const storage = getStorage(app);
-
-  // 4. Gắn các hàm vào window để file script.js xài chung được
-  window.firebaseDB = db;
-  window.firebaseStorage = storage;
-  window.fbCollection = collection;
-  window.fbAddDoc = addDoc;
-  window.fbServerTimestamp = serverTimestamp;
-  window.fbOnSnapshot = onSnapshot;
-  window.fbQuery = query;
-  window.fbOrderBy = orderBy;
-  window.fbGetDocs = getDocs;
-  window.fbRef = ref;
-  window.fbUploadBytes = uploadBytes;
-  window.fbGetDownloadURL = getDownloadURL;
 </script>
 
 <!-- Kết nối script chính của template -->

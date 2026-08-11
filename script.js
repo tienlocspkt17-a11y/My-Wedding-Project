@@ -4,8 +4,8 @@
    Đã gộp: Dual Perspective, Red Thread, Focus Gallery, Probability Chart, Rewind Time Machine
    ========================================================= */
 
-/* Một nguồn scroll/resize duy nhất: mọi scene cùng nhận một nhịp RAF, tránh
-   Safari phải chạy nhiều handler và đo layout lặp lại trong cùng một frame. */
+/* Một nguồn scroll duy nhất: mọi scene cùng nhận một nhịp RAF, tránh browser
+   phải chạy nhiều handler và đo layout lặp lại trong cùng một frame. */
 window.storyFrames = window.storyFrames || (function () {
   var subscribers = new Set();
   var frame = 0;
@@ -20,7 +20,6 @@ window.storyFrames = window.storyFrames || (function () {
   }
 
   window.addEventListener('scroll', request, { passive: true });
-  window.addEventListener('resize', request, { passive: true });
   return {
     subscribe: function (callback) {
       subscribers.add(callback);
@@ -31,6 +30,134 @@ window.storyFrames = window.storyFrames || (function () {
   };
 })();
 
+/* Mobile thay đổi innerHeight liên tục khi thanh địa chỉ ẩn/hiện. Chỉ một bộ
+   điều phối được phép resize backing store; thay đổi chỉ ở chiều cao do toolbar
+   được CSS co giãn tạm thời, tránh cấp phát lại tất cả canvas trong cùng frame. */
+window.storyViewport = window.storyViewport || (function () {
+  var subscribers = new Set();
+  var frame = 0;
+  var settleTimer = 0;
+  var viewport = {
+    width: Math.max(1, document.documentElement.clientWidth || window.innerWidth || 1),
+    height: Math.max(1, document.documentElement.clientHeight || window.innerHeight || 1),
+    orientation: window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+  };
+
+  function publish(force) {
+    frame = 0;
+    var width = Math.max(1, document.documentElement.clientWidth || window.innerWidth || 1);
+    var height = Math.max(1, document.documentElement.clientHeight || window.innerHeight || 1);
+    var orientation = width > height ? 'landscape' : 'portrait';
+    var widthChanged = Math.abs(width - viewport.width) > 1;
+    var orientationChanged = orientation !== viewport.orientation;
+
+    if (!force && !widthChanged && !orientationChanged) {
+      window.storyFrames.request();
+      return;
+    }
+
+    viewport = { width: width, height: height, orientation: orientation };
+    subscribers.forEach(function (callback) { callback(viewport); });
+    window.storyFrames.request();
+  }
+
+  function request(force) {
+    if (force) {
+      clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(function () {
+        if (!frame) frame = requestAnimationFrame(function () { publish(true); });
+      }, 160);
+      return;
+    }
+    if (!frame) frame = requestAnimationFrame(function () { publish(false); });
+  }
+
+  window.addEventListener('resize', function () { request(false); }, { passive: true });
+  window.addEventListener('orientationchange', function () { request(true); }, { passive: true });
+
+  return {
+    subscribe: function (callback) {
+      subscribers.add(callback);
+      callback(viewport);
+      return function () { subscribers.delete(callback); };
+    },
+    current: function () { return viewport; },
+    request: request
+  };
+})();
+
+/* Một RAF liên tục duy nhất cho toàn bộ hiệu ứng. Mỗi engine chỉ đăng ký một
+   callback và tự bật/tắt theo scene; canvas ẩn không còn âm thầm render. */
+window.storyAnimations = window.storyAnimations || (function () {
+  var tasks = new Map();
+  var frame = 0;
+  var lastNow = 0;
+
+  function tick(now) {
+    frame = 0;
+    if (document.hidden) return;
+    var delta = lastNow ? Math.min(50, now - lastNow) : 16.67;
+    lastNow = now;
+    var hasActiveTask = false;
+    tasks.forEach(function (task) {
+      if (!task.active) return;
+      hasActiveTask = true;
+      try {
+        task.render(now, delta);
+      } catch (error) {
+        // Một engine lỗi không được phép làm dừng toàn bộ animation còn lại.
+        task.active = false;
+        console.error('Đã tạm dừng animation bị lỗi:', error);
+      }
+    });
+    if (hasActiveTask) frame = requestAnimationFrame(tick);
+  }
+
+  function schedule() {
+    if (!frame && !document.hidden) frame = requestAnimationFrame(tick);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      lastNow = 0;
+    } else {
+      schedule();
+    }
+  });
+
+  return {
+    register: function (name, render) {
+      var task = { active: false, render: render };
+      tasks.set(name, task);
+      return {
+        setActive: function (active) {
+          task.active = Boolean(active);
+          if (task.active) schedule();
+        },
+        dispose: function () {
+          task.active = false;
+          tasks.delete(name);
+        }
+      };
+    }
+  };
+})();
+
+/* Scene absolute không ảnh hưởng scroll height, vì vậy có thể tháo hẳn khỏi
+   paint tree khi opacity về 0. Chỉ hai scene đang crossfade mới được giữ nóng. */
+window.storySetSceneActivity = window.storySetSceneActivity || function (element, active, displayValue) {
+  if (!element) return;
+  var nextState = active ? 'active' : 'cold';
+  if (element.dataset.storyRuntimeState === nextState) return;
+  element.dataset.storyRuntimeState = nextState;
+  element.classList.toggle('story-runtime-active', active);
+  element.style.display = active ? (displayValue || 'flex') : 'none';
+  element.style.visibility = active ? 'visible' : 'hidden';
+  element.inert = !active;
+};
+
 document.addEventListener('DOMContentLoaded', function () {
 
   /* ---------- CẤU HÌNH CHUNG ---------- */
@@ -38,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var WEDDING_LOCATION = 'Trung tâm Tiệc cưới ABC';
   var LOVE_STORY_VIDEO_ID = 'dQw4w9WgXcQ';
   var WEDDING_DATE = new Date('2026-10-20T17:30:00+07:00').getTime();
-  var safariRendering = Boolean(window.storyIsSafari);
+  var safariRendering = Boolean(window.storyIsSafari || window.storyMobilePerformance);
 
   /* Dấu vết chẩn đoán: nếu WebContent bị iOS đóng, pagehide thường không kịp
      chạy và lần mở kế tiếp vẫn thấy heartbeat ở trạng thái active. */
@@ -64,22 +191,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }, { once: true });
     } catch (_) {}
   })();
-
-  // Dữ liệu Góc nhìn kép (Dual Perspective)
-  var actTexts = {
-    'act-1': {
-       groom: 'Anh nhớ hôm đó trời mưa lất phất. Bước vào quán cà phê quen thuộc, anh thấy em đang loay hoay trú mưa. Chỉ một khoảnh khắc nhìn thấy nụ cười ấy, anh biết mình đã tìm đúng người.',
-       bride: 'Hôm đó em ướt sũng vì quên mang ô. Đang bực mình thì ngước lên thấy một chàng trai cứ nhìn mình chằm chằm rồi cười ngốc nghếch. Tự nhiên thấy... cũng đáng yêu.'
-    },
-    'act-2': {
-       groom: 'Những tháng ngày yêu nhau, anh nhận ra mình muốn bảo vệ em cả đời. Chuyến đi Đà Lạt năm ấy, nhìn em cười dưới ánh hoàng hôn, anh đã tự hứa sẽ không bao giờ buông tay.',
-       bride: 'Chuyến đi Đà Lạt đã thay đổi tất cả. Nơi bờ hồ bình yên đó, em nhận ra anh chính là bến đỗ an toàn nhất mà em luôn tìm kiếm bấy lâu nay.'
-    },
-    'act-3': {
-       groom: 'Ngày hôm nay, anh chính thức được gọi em là vợ. Cảm ơn em đã bước vào cuộc đời anh, biến những thuật toán khô khan thành một câu chuyện cổ tích.',
-       bride: 'Từ hai đường thẳng song song, chúng mình đã giao nhau. Ngày 20 tháng 10 năm 2026, em mặc chiếc váy trắng, nắm tay anh bước vào một chương mới. Mình cưới nhau nhé!'
-    }
-  };
 
   /* ---------- 1) COUNTDOWN ---------- */
   var elDays = document.getElementById('cd-days');
@@ -193,7 +304,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var petalColors = ['#D8A79C', '#EDEFE5', '#F3ECE0', '#D8C9A3', '#C08D82'];
     var compactMotion = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
     var totalPetals = compactMotion ? 72 : (safariRendering ? 90 : 120);
-    var petalFrame = 0;
     var petalsRunning = false;
 
     var mouse = { x: -1000, y: -1000, vx: 0, vy: 0, active: false };
@@ -201,12 +311,23 @@ document.addEventListener('DOMContentLoaded', function () {
     var scrollDir = 1;
     var lastScrollY = window.scrollY;
 
-    function resizeCanvas() {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+    function resizeCanvas(viewport) {
+      var nextWidth = viewport ? viewport.width : window.innerWidth;
+      var nextHeight = viewport ? viewport.height : window.innerHeight;
+      width = nextWidth;
+      height = nextHeight;
+      if (!petalsRunning) {
+        if (canvas.width > 1 || canvas.height > 1) {
+          canvas.width = 1;
+          canvas.height = 1;
+        }
+        return;
+      }
+      if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
     }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
+    window.storyViewport.subscribe(resizeCanvas);
 
     window.storyFrames.subscribe(function() {
       var currentScrollY = window.scrollY;
@@ -215,14 +336,16 @@ document.addEventListener('DOMContentLoaded', function () {
       lastScrollY = currentScrollY;
     });
 
-    window.addEventListener('mousemove', function(e) {
-      mouse.x = e.clientX; mouse.y = e.clientY;
-      mouse.vx = mouse.x - lastMouse.x; mouse.vy = mouse.y - lastMouse.y;
-      lastMouse.x = mouse.x; lastMouse.y = mouse.y;
-      mouse.active = true;
-      clearTimeout(mouse.timer);
-      mouse.timer = setTimeout(function() { mouse.vx = 0; mouse.vy = 0; mouse.active = false; }, 100);
-    });
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      window.addEventListener('mousemove', function(e) {
+        mouse.x = e.clientX; mouse.y = e.clientY;
+        mouse.vx = mouse.x - lastMouse.x; mouse.vy = mouse.y - lastMouse.y;
+        lastMouse.x = mouse.x; lastMouse.y = mouse.y;
+        mouse.active = true;
+        clearTimeout(mouse.timer);
+        mouse.timer = setTimeout(function() { mouse.vx = 0; mouse.vy = 0; mouse.active = false; }, 100);
+      }, { passive: true });
+    }
 
     var PetalPhysics = function (index) {
       this.index = index;
@@ -289,7 +412,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function animatePetals() {
-      petalFrame = 0;
       if (!petalsRunning || document.hidden) return;
       ctx.clearRect(0, 0, width, height);
 
@@ -311,22 +433,28 @@ document.addEventListener('DOMContentLoaded', function () {
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      petalFrame = requestAnimationFrame(animatePetals);
     }
 
-    function schedulePetals() {
-      if (petalsRunning && !document.hidden && !petalFrame) {
-        petalFrame = requestAnimationFrame(animatePetals);
-      }
-    }
+    var petalAnimation = window.storyAnimations.register('petals', animatePetals);
 
     function startPetals() {
       petalsRunning = true;
-      schedulePetals();
+      resizeCanvas(window.storyViewport.current());
+      petalAnimation.setActive(true);
     }
 
+    window.storySetPetalsActive = function (active) {
+      petalsRunning = Boolean(active && window.isGateOpened);
+      if (petalsRunning && canvas.width <= 1) resizeCanvas(window.storyViewport.current());
+      petalAnimation.setActive(petalsRunning);
+      if (!petalsRunning) {
+        ctx.clearRect(0, 0, width, height);
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    };
+
     window.addEventListener('wedding:intro-stop', startPetals, { once: true });
-    document.addEventListener('visibilitychange', schedulePetals);
     if (window.isGateOpened) startPetals();
   }
 
@@ -335,6 +463,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var music = document.getElementById('bg-music');
   var musicBtn = document.getElementById('music-toggle');
+  var gateListeners = new AbortController();
 
   window.playBackgroundMusic = function () {
     if (!music) return Promise.resolve(false);
@@ -371,7 +500,10 @@ document.addEventListener('DOMContentLoaded', function () {
       overlay3d.style.transition = 'opacity 1.5s ease';
       overlay3d.style.pointerEvents = 'none';
       overlay3d.style.opacity = '0';
-      setTimeout(function() { overlay3d.classList.add('hidden'); }, 1500);
+      setTimeout(function() {
+        overlay3d.classList.add('hidden');
+        overlay3d.remove();
+      }, 1550);
     }
 
     var nightGarden = document.getElementById('night-garden');
@@ -397,7 +529,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof window.observeReveal === 'function') window.observeReveal();
     if (typeof window.observe3D === 'function') window.observe3D();
 
-    // Yêu cầu module Three.js ngừng render sau khi overlay đã đóng.
+    // Intro chỉ dùng một lần; tháo listener gate và yêu cầu Three.js trả GPU.
+    gateListeners.abort();
     window.dispatchEvent(new Event('wedding:intro-stop'));
     window.storyFrames.request();
   };
@@ -448,37 +581,42 @@ document.addEventListener('DOMContentLoaded', function () {
     openingSkipBtn.dataset.gateBound = 'true';
 
     // Capture phase giúp nút Skip chạy trước listener click của overlay Three.js.
-    openingSkipBtn.addEventListener('click', openWeddingFromGate, true);
+    openingSkipBtn.addEventListener('click', openWeddingFromGate, { capture: true, signal: gateListeners.signal });
     openingSkipBtn.addEventListener('pointerup', function (event) {
       if (event.pointerType === 'touch') openWeddingFromGate(event);
-    }, true);
+    }, { capture: true, signal: gateListeners.signal });
   }
 
   if (openingOverlay) {
     openingOverlay.addEventListener('click', function (event) {
       if (event.target !== openingSkipBtn) armOpeningFallback();
-    });
+    }, { signal: gateListeners.signal });
 
     openingOverlay.addEventListener('touchend', function (event) {
       if (event.target !== openingSkipBtn) armOpeningFallback();
-    }, { passive: true });
+    }, { passive: true, signal: gateListeners.signal });
   }
 
   window.addEventListener('keydown', function (event) {
     if ((event.key === 'Enter' || event.key === ' ') && !window.isGateOpened) {
       armOpeningFallback();
     }
-  });
+  }, { signal: gateListeners.signal });
 
   /* ---------- 7) NIGHT GARDEN - VẦNG SÁNG ---------- */
   var nightLight = document.getElementById('night-light');
   if (nightLight) {
-    document.addEventListener('mousemove', function (e) {
-      nightLight.style.left = e.clientX + 'px'; nightLight.style.top = e.clientY + 'px';
-    });
-    document.addEventListener('touchmove', function (e) {
+    var nightLightSurface = nightLight.closest('#night-garden') || nightLight.parentElement;
+    if (window.matchMedia('(hover: hover)').matches) nightLightSurface.addEventListener('mousemove', function (e) {
+      var rect = nightLightSurface.getBoundingClientRect();
+      nightLight.style.left = (e.clientX - rect.left) + 'px';
+      nightLight.style.top = (e.clientY - rect.top) + 'px';
+    }, { passive: true });
+    nightLightSurface.addEventListener('touchmove', function (e) {
       var touch = e.touches[0];
-      nightLight.style.left = touch.clientX + 'px'; nightLight.style.top = touch.clientY + 'px';
+      var rect = nightLightSurface.getBoundingClientRect();
+      nightLight.style.left = (touch.clientX - rect.left) + 'px';
+      nightLight.style.top = (touch.clientY - rect.top) + 'px';
     }, { passive: true });
   }
 
@@ -488,14 +626,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var sparkles = [];
   var isSparkleRunning = false;
   var sparkleInView = false;
-  var sparkleFrame = 0;
   var sparkleBufferReleased = false;
-
-  function scheduleSparkles() {
-    if (isSparkleRunning && sparkleInView && !document.hidden && !sparkleFrame) {
-      sparkleFrame = requestAnimationFrame(animateSparkles);
-    }
-  }
 
   window.initSparkles = function() {
     if (!sparkleCanvas || isSparkleRunning) return;
@@ -513,11 +644,10 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     }
     isSparkleRunning = true;
-    scheduleSparkles();
+    sparkleAnimation.setActive(sparkleInView);
   }
 
-  function animateSparkles() {
-    sparkleFrame = 0;
+  function animateSparkles(now) {
     if (!isSparkleRunning || !sparkleInView || document.hidden) return;
     sparkleCtx.clearRect(0, 0, sparkleWidth, sparkleHeight);
 
@@ -526,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function () {
       s.x += s.speedX; s.y += s.speedY;
       if (s.x < 0 || s.x > sparkleWidth) s.speedX *= -1;
       if (s.y < 0 || s.y > sparkleHeight) s.speedY *= -1;
-      s.opacity = 0.3 + Math.sin(Date.now() / 1000 * s.twinkleSpeed) * 0.3 + 0.4;
+      s.opacity = 0.3 + Math.sin(now / 1000 * s.twinkleSpeed) * 0.3 + 0.4;
 
       sparkleCtx.beginPath();
       sparkleCtx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
@@ -535,8 +665,9 @@ document.addEventListener('DOMContentLoaded', function () {
       sparkleCtx.shadowColor = 'rgba(255, 215, 150, 0.3)';
       sparkleCtx.shadowBlur = 10;
     }
-    sparkleFrame = requestAnimationFrame(animateSparkles);
   }
+
+  var sparkleAnimation = window.storyAnimations.register('sparkles', animateSparkles);
 
   var sparkleSection = document.getElementById('night-garden');
   if (sparkleSection && 'IntersectionObserver' in window) {
@@ -544,26 +675,25 @@ document.addEventListener('DOMContentLoaded', function () {
       var activeEntry = entries.find(function(entry) { return entry.isIntersecting; });
       sparkleInView = Boolean(activeEntry);
       if (sparkleInView && sparkleBufferReleased) {
-        sparkleWidth = sparkleCanvas.width = window.innerWidth;
-        sparkleHeight = sparkleCanvas.height = window.innerHeight;
+        var viewport = window.storyViewport.current();
+        sparkleWidth = sparkleCanvas.width = viewport.width;
+        sparkleHeight = sparkleCanvas.height = viewport.height;
         sparkleBufferReleased = false;
-      } else if (!sparkleInView && window.storyUseMobileAssets && entries.some(function(entry) { return entry.boundingClientRect.bottom < 0; })) {
+      } else if (!sparkleInView && entries.some(function(entry) { return entry.boundingClientRect.bottom < 0; })) {
         sparkleCanvas.width = 1;
         sparkleCanvas.height = 1;
         sparkleBufferReleased = true;
       }
-      scheduleSparkles();
+      sparkleAnimation.setActive(isSparkleRunning && sparkleInView);
     }, { rootMargin: '15% 0px' }).observe(sparkleSection);
   } else {
     sparkleInView = true;
   }
-  document.addEventListener('visibilitychange', scheduleSparkles);
-
-  window.addEventListener('resize', function () {
-    if (sparkleCanvas) {
-      sparkleWidth = sparkleCanvas.width = window.innerWidth;
-      sparkleHeight = sparkleCanvas.height = window.innerHeight;
-    }
+  window.storyViewport.subscribe(function (viewport) {
+    if (!sparkleCanvas || sparkleBufferReleased || !sparkleInView) return;
+    if (sparkleCanvas.width === viewport.width && sparkleCanvas.height === viewport.height) return;
+    sparkleWidth = sparkleCanvas.width = viewport.width;
+    sparkleHeight = sparkleCanvas.height = viewport.height;
   });
   
 /* ---------- RED THREAD (Sợi chỉ đỏ định mệnh) ---------- */
@@ -575,12 +705,14 @@ threadCanvas.className = 'red-thread-canvas';
 document.body.appendChild(threadCanvas);
 var tCtx = threadCanvas.getContext('2d');
 
-function resizeThread() {
-  threadCanvas.width = window.innerWidth;
-  threadCanvas.height = window.innerHeight;
+function resizeThread(viewport) {
+  var nextWidth = viewport ? viewport.width : window.innerWidth;
+  var nextHeight = viewport ? viewport.height : window.innerHeight;
+  if (threadCanvas.width === nextWidth && threadCanvas.height === nextHeight) return;
+  threadCanvas.width = nextWidth;
+  threadCanvas.height = nextHeight;
 }
-window.addEventListener('resize', resizeThread);
-resizeThread();
+window.storyViewport.subscribe(resizeThread);
 
 // Hàm vẽ sợi chỉ với tham số rewindProgress (0-1) để điều khiển mức độ đứt
 function drawRedThread(rewindProgress) {
@@ -681,67 +813,18 @@ window.storyFrames.subscribe(function() {
   drawRedThread(0);
 });
 
-  /* ---------- 9) CHRONICLE TYPEWRITER & DUAL PERSPECTIVE ---------- */
-  var typedActs = {};
-
-  function typeAct(id, text, speed) {
-    speed = speed || 35;
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = '';
-    var index = 0;
-    var cursor = el.parentElement.querySelector('.act-cursor');
-
-    function typeChar() {
-      if (index < text.length) {
-        el.textContent += text.charAt(index);
-        index++;
-        setTimeout(typeChar, speed);
-      } else {
-        if (cursor) cursor.style.opacity = '0';
-      }
-    }
-    typeChar();
-  }
-  
-  // Dual Perspective Toggle Logic
-  document.querySelectorAll('.pt-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-       var parent = this.closest('.perspective-toggle');
-       parent.querySelectorAll('.pt-btn').forEach(function(b) { b.classList.remove('active'); });
-       this.classList.add('active');
-       
-       var actId = this.getAttribute('data-act');
-       var persp = this.getAttribute('data-persp');
-       var textTarget = document.getElementById(actId + '-text');
-       
-       if(textTarget && actTexts[actId] && actTexts[actId][persp]) {
-          textTarget.style.opacity = 0;
-          setTimeout(function() {
-             textTarget.style.opacity = 1;
-             typeAct(actId + '-text', actTexts[actId][persp], 30);
-          }, 300);
-       }
-    });
-  });
-
+  /* ---------- 9) CHRONICLE VISIBILITY ---------- */
+  var chronicleObserverStarted = false;
   window.observeChronicle = function() {
+    if (chronicleObserverStarted) return;
+    chronicleObserverStarted = true;
     var acts = document.querySelectorAll('.act');
     if ('IntersectionObserver' in window) {
       var actObserver = new IntersectionObserver(function (entries) {
         entries.forEach(function (entry) {
           if (entry.isIntersecting) {
-            var act = entry.target;
-            act.classList.add('visible');
-
-            var textId = act.querySelector('.act-text')?.id;
-            var actId = textId ? textId.replace('-text', '') : null;
-            if (textId && actTexts[actId] && actTexts[actId]['groom'] && !typedActs[textId]) {
-              typedActs[textId] = true;
-              setTimeout(function () {
-                typeAct(textId, actTexts[actId]['groom'], 35);
-              }, 600);
-            }
+            entry.target.classList.add('visible');
+            actObserver.unobserve(entry.target);
           }
         });
       }, { threshold: 0.4 });
@@ -750,9 +833,6 @@ window.storyFrames.subscribe(function() {
     } else {
       acts.forEach(function (act) {
         act.classList.add('visible');
-        var textId = act.querySelector('.act-text')?.id;
-        var actId = textId ? textId.replace('-text', '') : null;
-        if (textId && actTexts[actId]) document.getElementById(textId).textContent = actTexts[actId]['groom'];
       });
     }
   }
@@ -814,7 +894,7 @@ window.storyFrames.subscribe(function() {
     let isRewound = false;
     let activeFlashLayer = 0;
     let lastImageIndex = -1;
-    let act0Frame = 0;
+    const rewindListeners = new AbortController();
 
     circle.style.strokeDasharray = `${circumference} ${circumference}`;
     circle.style.strokeDashoffset = circumference;
@@ -876,13 +956,6 @@ window.storyFrames.subscribe(function() {
       if (typeof clearRedThread === 'function') clearRedThread();
     }
 
-    function ensureExpandedAct0Height() {
-      if (!isRewound) return;
-      const viewportHeight = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0, 640);
-      const screenCount = window.innerWidth <= 680 ? 4.6 : 4.2;
-      saSection.style.minHeight = `${Math.round(viewportHeight * screenCount)}px`;
-    }
-
     const startHold = event => {
       if (event && event.cancelable) event.preventDefault();
       if (isRewound || isHolding) return;
@@ -929,18 +1002,26 @@ window.storyFrames.subscribe(function() {
       rewindBtn.setAttribute('aria-disabled', 'true');
       saSection.classList.add('is-rewound');
       document.body.classList.add('act0-rewound');
-      ensureExpandedAct0Height();
       saPresent.style.pointerEvents = 'none';
       rewindFrame?.classList.remove('is-visible');
+      flashLayers.forEach(function (layer) {
+        if (!layer) return;
+        layer.classList.remove('is-current');
+        layer.style.removeProperty('background-image');
+      });
       updateProbability(1);
       if (typeof clearRedThread === 'function') clearRedThread();
+      // Rewind chỉ dùng một lần; tháo listener capture/non-passive để trả lại
+      // đường cuộn bất đồng bộ hoàn toàn cho mobile.
+      rewindListeners.abort();
       renderAct0();
     };
 
     function setScene(scene, opacity, translateY, scale) {
       if (!scene) return;
-      scene.style.display = 'flex';
-      scene.style.visibility = 'visible';
+      const active = opacity > 0.002;
+      window.storySetSceneActivity(scene, active, 'flex');
+      if (!active) return;
       scene.style.opacity = opacity.toFixed(3);
       scene.style.transform = `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
       scene.style.filter = 'none';
@@ -948,12 +1029,16 @@ window.storyFrames.subscribe(function() {
     }
 
     function renderAct0() {
-      act0Frame = 0;
       if (!isRewound) return;
 
       const sectionRect = saSection.getBoundingClientRect();
       const isNearAct0 = sectionRect.top < window.innerHeight * 1.5 && sectionRect.bottom > -window.innerHeight;
-      if (!isNearAct0) return;
+      if (!isNearAct0) {
+        [saAlternate, saParallel, saConvergence, saFinale].forEach(function (scene) {
+          window.storySetSceneActivity(scene, false);
+        });
+        return;
+      }
       const travel = Math.max(1, sectionRect.height - window.innerHeight);
       const progress = clamp(-sectionRect.top / travel);
       const alternateOpacity = envelope(progress, 0, .035, .18, .27);
@@ -1037,10 +1122,6 @@ window.storyFrames.subscribe(function() {
       if (nextCue) nextCue.style.opacity = segment(finaleProgress, .82, 1).toFixed(3);
     }
 
-    function scheduleAct0Render() {
-      if (!act0Frame) act0Frame = requestAnimationFrame(renderAct0);
-    }
-
     function isInsideRewindButton(event) {
       if (event.target && event.target.closest && event.target.closest('#rewind-btn')) return true;
 
@@ -1054,6 +1135,7 @@ window.storyFrames.subscribe(function() {
     function pointerStart(event) {
       if (event.isPrimary === false || !isInsideRewindButton(event)) return;
       startHold(event);
+      try { rewindBtn.setPointerCapture?.(event.pointerId); } catch (_) {}
     }
 
     function pointerMove(event) {
@@ -1062,30 +1144,30 @@ window.storyFrames.subscribe(function() {
 
     // Capture phase nhận sự kiện trước mọi canvas/overlay của concept.
     if ('PointerEvent' in window) {
-      document.addEventListener('pointerdown', pointerStart, { capture: true, passive: false });
-      document.addEventListener('pointermove', pointerMove, { capture: true, passive: false });
-      document.addEventListener('pointerup', stopHold, true);
-      document.addEventListener('pointercancel', stopHold, true);
+      document.addEventListener('pointerdown', pointerStart, { capture: true, passive: false, signal: rewindListeners.signal });
+      rewindBtn.addEventListener('pointermove', pointerMove, { passive: false, signal: rewindListeners.signal });
+      rewindBtn.addEventListener('pointerup', stopHold, { signal: rewindListeners.signal });
+      rewindBtn.addEventListener('pointercancel', stopHold, { signal: rewindListeners.signal });
     } else {
       // Fallback cho WebView/Safari cũ chưa hỗ trợ Pointer Events.
-      rewindBtn.addEventListener('mousedown', startHold);
-      window.addEventListener('mouseup', stopHold);
-      rewindBtn.addEventListener('touchstart', startHold, { passive: false });
-      window.addEventListener('touchend', stopHold, { passive: false });
-      window.addEventListener('touchcancel', stopHold, { passive: false });
+      rewindBtn.addEventListener('mousedown', startHold, { signal: rewindListeners.signal });
+      window.addEventListener('mouseup', stopHold, { signal: rewindListeners.signal });
+      rewindBtn.addEventListener('touchstart', startHold, { passive: false, signal: rewindListeners.signal });
+      window.addEventListener('touchend', stopHold, { passive: false, signal: rewindListeners.signal });
+      window.addEventListener('touchcancel', stopHold, { passive: false, signal: rewindListeners.signal });
     }
-    window.addEventListener('blur', stopHold);
-    rewindBtn.addEventListener('contextmenu', function (event) { event.preventDefault(); });
-    rewindBtn.addEventListener('dragstart', function (event) { event.preventDefault(); });
+    window.addEventListener('blur', stopHold, { signal: rewindListeners.signal });
+    rewindBtn.addEventListener('contextmenu', function (event) { event.preventDefault(); }, { signal: rewindListeners.signal });
+    rewindBtn.addEventListener('dragstart', function (event) { event.preventDefault(); }, { signal: rewindListeners.signal });
     rewindBtn.dataset.rewindBound = 'true';
 
     // Cho phép giữ Space/Enter khi điều khiển bằng bàn phím.
     rewindBtn.addEventListener('keydown', function (event) {
       if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) startHold(event);
-    });
+    }, { signal: rewindListeners.signal });
     rewindBtn.addEventListener('keyup', function (event) {
       if (event.key === 'Enter' || event.key === ' ') stopHold(event);
-    });
+    }, { signal: rewindListeners.signal });
 
     const saObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -1097,11 +1179,8 @@ window.storyFrames.subscribe(function() {
     }, { threshold: 0.15 });
 
     saObserver.observe(saSection);
-    window.storyFrames.subscribe(scheduleAct0Render);
-    window.addEventListener('resize', function () {
-      ensureExpandedAct0Height();
-      scheduleAct0Render();
-    }, { passive: true });
+    window.storyFrames.subscribe(renderAct0);
+    window.storyViewport.subscribe(renderAct0);
 
     const act1Shell = document.getElementById('act-1');
     if (act1Shell && 'IntersectionObserver' in window) {
@@ -1129,12 +1208,8 @@ window.storyFrames.subscribe(function() {
   const act1LiveTime = document.getElementById('a1-live-time');
   const act1ProgressBar = document.getElementById('a1-scroll-progress');
   const act1ProgressText = document.getElementById('a1-scroll-percent');
-  const act1HiddenJourney = document.getElementById('hidden-journey');
-
   if (act1Section && act1Cinematic) {
-    let act1Frame = 0;
     let act1FogCleared = false;
-    let act2FlowRevealed = false;
 
     const a1Clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
     const a1Segment = (value, start, end) => a1Clamp((value - start) / (end - start));
@@ -1144,20 +1219,11 @@ window.storyFrames.subscribe(function() {
       return a1Clamp(Math.min(fadeIn, fadeOut));
     };
 
-    function revealAct2Flow() {
-      if (act2FlowRevealed || !act1HiddenJourney) return;
-      act2FlowRevealed = true;
-      act1HiddenJourney.style.display = 'block';
-      requestAnimationFrame(() => {
-        act1HiddenJourney.style.opacity = '1';
-        window.dispatchEvent(new Event('resize'));
-      });
-    }
-
     function setAct1Scene(scene, opacity, translateY = 0, scale = 1) {
       if (!scene) return;
-      scene.style.display = 'flex';
-      scene.style.visibility = 'visible';
+      const active = opacity > 0.002;
+      window.storySetSceneActivity(scene, active, 'flex');
+      if (!active) return;
       scene.style.opacity = opacity.toFixed(3);
       scene.style.transform = `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
       const isInteractivePerspective = scene === act1PerspectiveScene && opacity > .62;
@@ -1175,7 +1241,6 @@ window.storyFrames.subscribe(function() {
     }
 
     function renderAct1() {
-      act1Frame = 0;
       if (!document.body.classList.contains('act0-rewound')) return;
 
       const rect = act1Section.getBoundingClientRect();
@@ -1184,9 +1249,13 @@ window.storyFrames.subscribe(function() {
       const progress = a1Clamp(-rect.top / travel);
       const isNearAct1 = rect.top < window.innerHeight * 1.15 && rect.bottom > 0;
       document.body.classList.toggle('act1-active', isNearAct1);
-      if (!shouldRenderAct1) return;
+      if (!shouldRenderAct1) {
+        [act1Cinematic, act1PerspectiveScene, act1TimeScene, act1OutroScene].forEach(function (scene) {
+          window.storySetSceneActivity(scene, false);
+        });
+        return;
+      }
 
-      if (isNearAct1) revealAct2Flow();
       if (isNearAct1 && typeof window.initFogCanvas === 'function') window.initFogCanvas();
 
       // Giữ nguyên màn kính cho tới khi người xem chủ động lau hoặc bỏ qua.
@@ -1220,24 +1289,21 @@ window.storyFrames.subscribe(function() {
       }
     }
 
-    function scheduleAct1Render() {
-      if (!act1Frame) act1Frame = requestAnimationFrame(renderAct1);
-    }
-
     if (act1PerspectiveRange) {
       act1PerspectiveRange.addEventListener('input', event => updateAct1Perspective(event.target.value));
       updateAct1Perspective(act1PerspectiveRange.value);
     }
     window.addEventListener('act1:fog-cleared', () => {
       act1FogCleared = true;
-      scheduleAct1Render();
+      renderAct1();
     });
-    window.storyFrames.subscribe(scheduleAct1Render);
+    window.storyFrames.subscribe(renderAct1);
   }
 
   /* ---------- MANUAL FOCUS GALLERY LOGIC ---------- */
   var focusSlider = document.getElementById('focus-slider');
   var focusImg = document.getElementById('focus-img');
+  var focusBlurImg = document.getElementById('focus-blur-img');
   var focusPeaking = document.getElementById('focus-peaking');
   var focusHint = document.getElementById('focus-hint');
   var epilogueSection = document.getElementById('epilogue');
@@ -1252,8 +1318,12 @@ window.storyFrames.subscribe(function() {
     if (focusSlider && !fromManualInput) focusSlider.value = String(Math.round(focusValue));
     if (epilogueSection) epilogueSection.style.setProperty('--epi-focus-value', ratio.toFixed(4));
     if (focusImg) {
-      focusImg.style.filter = 'blur(' + ((1 - ratio) * (safariRendering ? 12 : 20)).toFixed(2) + 'px)';
-      focusImg.style.transform = 'scale(' + (1.06 - ratio * .06).toFixed(4) + ')';
+      focusImg.style.opacity = ratio.toFixed(3);
+      focusImg.style.transform = 'scale(' + (1.025 - ratio * .025).toFixed(4) + ')';
+    }
+    if (focusBlurImg) {
+      focusBlurImg.style.opacity = (1 - ratio).toFixed(3);
+      focusBlurImg.style.transform = 'scale(' + (1.06 - ratio * .025).toFixed(4) + ')';
     }
     if (proposalAnswer) {
       proposalAnswer.style.opacity = String(Math.max(0, Math.min(1, (ratio - .72) / .28)));
@@ -1513,6 +1583,48 @@ window.storyFrames.subscribe(function() {
   var suggestedSongs = [];
   var suggestedList = document.getElementById('suggested-list');
   var suggestionForm = document.getElementById('playlist-suggestion-form');
+  var spotifyEmbed = document.getElementById('spotify-embed');
+  var spotifyActivated = false;
+
+  function renderSpotifyFacade() {
+    if (!spotifyEmbed || !spotifyEmbed.querySelector('iframe')) return;
+    spotifyEmbed.classList.add('spotify-facade');
+    spotifyEmbed.classList.remove('spotify-loaded');
+    spotifyEmbed.innerHTML = '<span class="spotify-facade-icon" aria-hidden="true">♫</span><strong>Soundtrack của chúng mình</strong><p>Playlist chỉ được tải khi bạn muốn nghe, để hành trình cuộn luôn nhẹ.</p><button class="btn outline" id="spotify-load" type="button">Mở playlist</button>';
+  }
+  window.storyReleaseSpotify = renderSpotifyFacade;
+
+  function mountSpotify() {
+    if (!spotifyEmbed || spotifyEmbed.querySelector('iframe')) return;
+      var iframe = document.createElement('iframe');
+      iframe.src = spotifyEmbed.dataset.spotifySrc || '';
+      iframe.width = '100%';
+      iframe.height = '380';
+      iframe.style.border = '0';
+      iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+      iframe.title = 'Playlist của chúng mình';
+      spotifyEmbed.replaceChildren(iframe);
+      spotifyEmbed.classList.remove('spotify-facade');
+      spotifyEmbed.classList.add('spotify-loaded');
+  }
+
+  if (spotifyEmbed) {
+    spotifyEmbed.addEventListener('click', function (event) {
+      if (event.target.closest('#spotify-load')) mountSpotify();
+    });
+    var spotifySection = spotifyEmbed.closest('section') || spotifyEmbed;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) spotifyActivated = true;
+          else if (spotifyActivated && spotifyEmbed.querySelector('iframe') && (
+            entry.boundingClientRect.bottom < -window.innerHeight ||
+            entry.boundingClientRect.top > window.innerHeight * 2
+          )) renderSpotifyFacade();
+        });
+      }, { rootMargin: '50% 0px', threshold: 0 }).observe(spotifySection);
+    }
+  }
 
   function renderSuggestedSongs() {
     if (!suggestedList) return;
@@ -1572,15 +1684,86 @@ window.storyFrames.subscribe(function() {
   ];
 
   var galleryWrapper = document.getElementById('gallery-wrapper');
+  var albumSlides = [];
+  var albumWindowCenter = -1;
+  var albumWindowActive = false;
   if (galleryWrapper) {
     galleryImages.forEach(function (src, index) {
       var slide = document.createElement('div');
       slide.className = 'epilogue-album-slide';
-      slide.innerHTML = '<img src="' + window.storyImageSource(src) + '" alt="Ảnh cưới" loading="lazy" decoding="async" />';
+      slide.dataset.albumSrc = src;
+      slide.dataset.albumIndex = String(index);
+      slide.setAttribute('aria-label', 'Mở ảnh cưới ' + (index + 1));
       slide.addEventListener('click', function () { openLightbox(index); });
       galleryWrapper.appendChild(slide);
+      albumSlides.push(slide);
     });
   }
+
+  function setAlbumWindow(progress, active) {
+    if (!albumSlides.length) return;
+    var center = Math.max(0, Math.min(albumSlides.length - 1, Math.round((Number(progress) || 0) * (albumSlides.length - 1))));
+    if (center === albumWindowCenter && Boolean(active) === albumWindowActive) return;
+    albumWindowCenter = center;
+    albumWindowActive = Boolean(active);
+    var radius = window.storyUseMobileAssets ? 1 : 2;
+    albumSlides.forEach(function (slide, index) {
+      var shouldMount = Boolean(active) && Math.abs(index - center) <= radius;
+      var existing = slide.querySelector('img');
+      if (shouldMount && !existing) {
+        var image = document.createElement('img');
+        image.src = window.storyImageSource(slide.dataset.albumSrc || '');
+        image.alt = 'Ảnh cưới ' + (index + 1);
+        image.decoding = 'async';
+        image.loading = index === center ? 'eager' : 'lazy';
+        slide.appendChild(image);
+      } else if (!shouldMount && existing) {
+        existing.removeAttribute('src');
+        existing.remove();
+      }
+      slide.classList.toggle('is-album-loaded', shouldMount);
+    });
+  }
+  window.storySetAlbumProgress = setAlbumWindow;
+
+  var epilogueFocusPictures = Array.from(document.querySelectorAll('#epilogue-focus-scene .focus-picture'));
+  var epilogueCouplePhotos = Array.from(document.querySelectorAll('#couple .epilogue-couple-photo[data-bg]'));
+  var epilogueMediaState = { focus: true, couple: false };
+  var sceneTransparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+
+  function setScenePictureMounted(picture, mounted) {
+    var image = picture.querySelector('img');
+    if (!mounted && image && image.getAttribute('src') !== sceneTransparentPixel) {
+      // Đổi fallback trước khi tháo <source> để không fetch thoáng qua ảnh desktop.
+      image.dataset.sceneSrc = image.getAttribute('src') || '';
+      image.setAttribute('src', sceneTransparentPixel);
+    }
+    picture.querySelectorAll('source').forEach(function (source) {
+      if (mounted && source.dataset.sceneSrcset) {
+        source.setAttribute('srcset', source.dataset.sceneSrcset);
+      } else if (!mounted && source.hasAttribute('srcset')) {
+        source.dataset.sceneSrcset = source.getAttribute('srcset');
+        source.removeAttribute('srcset');
+      }
+    });
+    if (mounted && image && image.dataset.sceneSrc) image.setAttribute('src', image.dataset.sceneSrc);
+  }
+
+  window.storySetEpilogueMedia = function (focusActive, coupleActive) {
+    focusActive = Boolean(focusActive);
+    coupleActive = Boolean(coupleActive);
+    if (focusActive !== epilogueMediaState.focus) {
+      epilogueMediaState.focus = focusActive;
+      epilogueFocusPictures.forEach(function (picture) { setScenePictureMounted(picture, focusActive); });
+    }
+    if (coupleActive !== epilogueMediaState.couple) {
+      epilogueMediaState.couple = coupleActive;
+      epilogueCouplePhotos.forEach(function (element) {
+        if (coupleActive) element.style.backgroundImage = 'url("' + window.storyImageSource(element.dataset.bg || '') + '")';
+        else element.style.removeProperty('background-image');
+      });
+    }
+  };
 
 /* ---------- 22) LIGHTBOX ---------- */
   var lightbox = document.getElementById('lightbox'), 
@@ -1659,17 +1842,48 @@ window.storyFrames.subscribe(function() {
       albumPhotos = typeof invisibleData !== 'undefined' ? invisibleData.slice(0, 6).map(function(item) { return item.img; }) : galleryImages.slice(0, 6);
   function loadUploadedPhotos() { try { var raw = localStorage.getItem(PHOTO_STORAGE_KEY); var parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed.slice(0, MAX_STORED_PHOTOS) : []; } catch (e) { return []; } }
   function saveUploadedPhotos(list) { try { localStorage.setItem(PHOTO_STORAGE_KEY, JSON.stringify(list)); } catch (e) {} }
-  var uploadedPhotos = loadUploadedPhotos();
+  var uploadedPhotos = null;
+  var photoWallInitialized = false;
 
   function renderPhotoMarquee() {
     if (!photoTrack) return; photoTrack.innerHTML = '';
+    if (!uploadedPhotos) uploadedPhotos = loadUploadedPhotos();
     var allSrcs = uploadedPhotos.concat(albumPhotos);
     allSrcs.concat(allSrcs).forEach(function (src) {
       var figure = document.createElement('figure'), img = document.createElement('img');
       img.src = window.storyImageSource(src); img.alt = 'Khoảnh khắc'; img.loading = 'lazy'; img.decoding = 'async'; figure.appendChild(img); photoTrack.appendChild(figure);
     });
   }
-  renderPhotoMarquee();
+
+  function initPhotoWall() {
+    if (photoWallInitialized) return;
+    photoWallInitialized = true;
+    uploadedPhotos = loadUploadedPhotos();
+    renderPhotoMarquee();
+  }
+
+  function releasePhotoWall() {
+    if (!photoWallInitialized || !photoTrack) return;
+    photoTrack.replaceChildren();
+    uploadedPhotos = null;
+    photoWallInitialized = false;
+  }
+  window.storyReleasePhotoWall = releasePhotoWall;
+
+  var liveWallSection = document.getElementById('livewall');
+  if (photoTrack && liveWallSection && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) initPhotoWall();
+        else if (photoWallInitialized && (
+          entry.boundingClientRect.bottom < -window.innerHeight ||
+          entry.boundingClientRect.top > window.innerHeight * 2
+        )) releasePhotoWall();
+      });
+    }, { rootMargin: '60% 0px', threshold: 0 }).observe(liveWallSection);
+  } else if (photoTrack) {
+    initPhotoWall();
+  }
 
   var uploadInput = document.getElementById('photo-upload-input'), uploadHint = document.getElementById('upload-hint');
   function preparePhoto(file) {
@@ -1678,15 +1892,24 @@ window.storyFrames.subscribe(function() {
       var image = new Image();
       var objectUrl = URL.createObjectURL(file);
       image.onload = function () {
-        var maxEdge = 1280;
+        var maxEdge = window.storyUseMobileAssets ? 960 : 1280;
         var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
         var output = document.createElement('canvas');
         output.width = Math.max(1, Math.round(image.naturalWidth * scale));
         output.height = Math.max(1, Math.round(image.naturalHeight * scale));
         output.getContext('2d', { alpha: false }).drawImage(image, 0, 0, output.width, output.height);
         URL.revokeObjectURL(objectUrl);
-        // Thu nhỏ trước khi lưu giúp Safari không phải giữ nhiều ảnh full-resolution trong RAM.
-        resolve(output.toDataURL('image/jpeg', 0.82));
+        image.removeAttribute('src');
+        // Encode bất đồng bộ và thu canvas ngay sau khi có Blob.
+        output.toBlob(function (blob) {
+          output.width = 1;
+          output.height = 1;
+          if (!blob) return resolve(null);
+          var reader = new FileReader();
+          reader.onload = function () { resolve(reader.result); };
+          reader.onerror = function () { resolve(null); };
+          reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.8);
       };
       image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
       image.src = objectUrl;
@@ -1695,8 +1918,13 @@ window.storyFrames.subscribe(function() {
   if (uploadInput) {
     uploadInput.addEventListener('change', function () {
       var files = Array.prototype.slice.call(uploadInput.files || []); if (!files.length) return;
-      var readPromises = files.map(preparePhoto);
-      Promise.all(readPromises).then(function (results) {
+      initPhotoWall();
+      // Xử lý tuần tự: nhiều ảnh camera 12MP không còn decode đồng thời.
+      files.reduce(function (promise, file) {
+        return promise.then(function (results) {
+          return preparePhoto(file).then(function (result) { if (result) results.push(result); return results; });
+        });
+      }, Promise.resolve([])).then(function (results) {
         var validResults = results.filter(Boolean);
         uploadedPhotos = validResults.concat(uploadedPhotos).slice(0, MAX_STORED_PHOTOS); saveUploadedPhotos(uploadedPhotos); renderPhotoMarquee();
         if (uploadHint) { uploadHint.textContent = 'Đã gửi ' + validResults.length + ' ảnh — cảm ơn bạn!'; uploadHint.style.color = '#5B6B4F'; }
@@ -1743,10 +1971,12 @@ window.storyFrames.subscribe(function() {
     } catch (e) { return seedWishes.slice(); }
   }
   function saveWishes(wishes) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(wishes)); } catch (e) {} }
-  var currentWishes = loadWishes();
+  // Chỉ đọc storage khi Guestbook sắp xuất hiện; trang đầu không cần giữ dữ
+  // liệu lời chúc và node vật lý trong heap suốt toàn bộ love story.
+  var currentWishes = null;
 
   var gbCanvas = document.getElementById('guestbook-canvas');
-  var gbCtx = gbCanvas ? gbCanvas.getContext('2d') : null;
+  var gbCtx = null;
   var gbTooltip = document.getElementById('guestbook-tooltip');
   var gbTooltipText = document.getElementById('gb-tooltip-text');
   var gbTooltipName = document.getElementById('gb-tooltip-name');
@@ -1754,7 +1984,7 @@ window.storyFrames.subscribe(function() {
   var nodes = [];
   var gbW, gbH;
   var gbInView = false;
-  var gbFrame = 0;
+  var gbInitialized = false;
   var balloonPalette = [
     ['#d9a79d', '#8f5559'],
     ['#e2c6a8', '#9f7656'],
@@ -1770,8 +2000,20 @@ window.storyFrames.subscribe(function() {
   var isHoveringCanvas = false; // Trạng thái 3: Nam châm
   var newWishNode = null;     // Trạng thái 1: Sao băng
 
+  // Canvas ngoài viewport bắt đầu ở 1×1 thay vì backing store mặc định 300×150.
+  if (gbCanvas) {
+    gbCanvas.width = 1;
+    gbCanvas.height = 1;
+  }
+
   function initGuestbookNetwork() {
     if(!gbCanvas) return;
+    if (!currentWishes) currentWishes = loadWishes();
+    if (!gbCtx) gbCtx = gbCanvas.getContext('2d');
+    if (gbInitialized) {
+      resizeGuestbookCanvas();
+      return;
+    }
     gbW = gbCanvas.width = gbCanvas.parentElement.clientWidth;
     gbH = gbCanvas.height = gbCanvas.parentElement.clientHeight;
     
@@ -1784,13 +2026,8 @@ window.storyFrames.subscribe(function() {
         palette: balloonPalette[index % balloonPalette.length]
       };
     });
+    gbInitialized = true;
     startAutoBreathing();
-  }
-
-  function scheduleGuestbook() {
-    if (gbCtx && gbInView && !document.hidden && !gbFrame) {
-      gbFrame = requestAnimationFrame(animateGB);
-    }
   }
 
   function showNodeTooltip(node, isSuperHighlight) {
@@ -1819,7 +2056,6 @@ window.storyFrames.subscribe(function() {
   }
 
   function animateGB() {
-    gbFrame = 0;
     if(!gbCtx || !gbInView || document.hidden) return;
     gbCtx.clearRect(0, 0, gbW, gbH);
     
@@ -1907,21 +2143,46 @@ window.storyFrames.subscribe(function() {
        gbCanvas.style.cursor = 'default';
     }
 
-    gbFrame = requestAnimationFrame(animateGB);
+  }
+
+  var guestbookAnimation = window.storyAnimations.register('guestbook', animateGB);
+
+  function resizeGuestbookCanvas() {
+    if (!gbCanvas || !gbInView) return;
+    var nextW = gbCanvas.parentElement.clientWidth;
+    var nextH = gbCanvas.parentElement.clientHeight;
+    if (nextW < 2 || nextH < 2) return;
+    if (gbCanvas.width === nextW && gbCanvas.height === nextH) return;
+    var wasCollapsed = !gbW || !gbH || gbW < 2 || gbH < 2;
+    gbW = gbCanvas.width = nextW;
+    gbH = gbCanvas.height = nextH;
+    nodes.forEach(function(node) {
+      if (wasCollapsed) {
+        node.x = 24 + Math.random() * Math.max(1, gbW - 48);
+        node.y = 34 + Math.random() * Math.max(1, gbH - 68);
+      } else {
+        node.x = Math.max(18, Math.min(gbW - 18, node.x));
+        node.y = Math.max(24, Math.min(gbH - 36, node.y));
+      }
+    });
   }
   
   if(gbCanvas) {
-    initGuestbookNetwork();
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function(entries) {
         gbInView = entries.some(function(entry) { return entry.isIntersecting; });
-        scheduleGuestbook();
+        if (gbInView) initGuestbookNetwork();
+        guestbookAnimation.setActive(gbInView);
+        if (!gbInView && gbInitialized) {
+          gbCanvas.width = 1;
+          gbCanvas.height = 1;
+        }
       }, { rootMargin: '15% 0px' }).observe(gbCanvas.parentElement);
     } else {
       gbInView = true;
-      scheduleGuestbook();
+      initGuestbookNetwork();
+      guestbookAnimation.setActive(true);
     }
-    document.addEventListener('visibilitychange', scheduleGuestbook);
     gbCanvas.addEventListener('mousemove', function(e) {
       isHoveringCanvas = true;
       var rect = gbCanvas.getBoundingClientRect();
@@ -1941,33 +2202,17 @@ window.storyFrames.subscribe(function() {
       });
       if (nearest) { autoNode = nearest; showNodeTooltip(nearest, false); }
     });
-    function resizeGuestbookCanvas() {
-      var nextW = gbCanvas.parentElement.clientWidth;
-      var nextH = gbCanvas.parentElement.clientHeight;
-      if (nextW < 2 || nextH < 2) return;
-      var wasCollapsed = !gbW || !gbH || gbW < 2 || gbH < 2;
-      gbW = gbCanvas.width = nextW;
-      gbH = gbCanvas.height = nextH;
-      nodes.forEach(function(node) {
-        if (wasCollapsed) {
-          node.x = 24 + Math.random() * Math.max(1, gbW - 48);
-          node.y = 34 + Math.random() * Math.max(1, gbH - 68);
-        } else {
-          node.x = Math.max(18, Math.min(gbW - 18, node.x));
-          node.y = Math.max(24, Math.min(gbH - 36, node.y));
-        }
-      });
-    }
-    window.addEventListener('resize', resizeGuestbookCanvas);
     if ('ResizeObserver' in window) new ResizeObserver(resizeGuestbookCanvas).observe(gbCanvas.parentElement);
   }
   
   // TRẠNG THÁI 1: SHOOTING STAR (Thêm lời chúc mới)
   function addWishToWall(name, text) {
     var newWish = { name: name, text: text };
+    if (!currentWishes) currentWishes = loadWishes();
     currentWishes.push(newWish); saveWishes(currentWishes); 
     
     if(gbCanvas) {
+      if (!gbInitialized) initGuestbookNetwork();
       var newNode = {
         x: gbW / 2, y: gbH + 30, // Bắn từ dưới lên trung tâm
         vx: (Math.random() - 0.5) * 1.5, vy: -4 - Math.random() * 2, // Lực đẩy mạnh lên trên
@@ -2010,8 +2255,8 @@ window.storyFrames.subscribe(function() {
   function createHeartBurst(x, y) {
     var emojis = ['❤️', '💕', '💖', '💗', '💝'];
     for (var i = 0; i < 25; i++) {
-      var heart = document.createElement('div'); heart.textContent = emojis[Math.floor(Math.random() * emojis.length)];
-      var size = 14 + Math.random() * 28, angle = Math.random() * Math.PI * 2, dist = 80 + Math.random() * 200, dx = Math.cos(angle) * dist, dy = Math.sin(angle) * dist - 100 - Math.random() * 150;
+      let heart = document.createElement('div'); heart.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+      let size = 14 + Math.random() * 28, angle = Math.random() * Math.PI * 2, dist = 80 + Math.random() * 200, dx = Math.cos(angle) * dist, dy = Math.sin(angle) * dist - 100 - Math.random() * 150;
       heart.style.cssText = `position: fixed; left: ${x}px; top: ${y}px; font-size: ${size}px; pointer-events: none; z-index: 9999; transition: all ${1.2 + Math.random() * 1}s cubic-bezier(0.2, 0.8, 0.4, 1); opacity: 1; transform: translate(0,0) scale(0.5);`;
       document.body.appendChild(heart);
       requestAnimationFrame(function () { heart.style.transform = `translate(${dx}px, ${dy}px) scale(1.2) rotate(${Math.random() * 60 - 30}deg)`; heart.style.opacity = '0'; });
@@ -2044,13 +2289,16 @@ window.storyFrames.subscribe(function() {
     window.storyFrames.subscribe(function () {
       var scrollRange = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       var percent = (window.scrollY / scrollRange) * 100;
-      progress.style.width = percent + '%';
+      progress.style.transform = 'scaleX(' + Math.max(0, Math.min(1, percent / 100)).toFixed(4) + ')';
     });
   }
 
   /* ---------- 32) REVEAL ON SCROLL ---------- */
   window.probTriggered = false;
+  var revealObserverStarted = false;
   window.observeReveal = function() {
+    if (revealObserverStarted) return;
+    revealObserverStarted = true;
     var revealEls = document.querySelectorAll('.reveal');
     if ('IntersectionObserver' in window) {
       var revealObserver = new IntersectionObserver(function (entries) { 
@@ -2073,7 +2321,10 @@ window.storyFrames.subscribe(function() {
   window.observeReveal();
 
   /* ---------- 33) SCROLL-TRIGGERED 3D TRANSFORM ---------- */
+  var transformObserverStarted = false;
   window.observe3D = function() {
+    if (transformObserverStarted) return;
+    transformObserverStarted = true;
     var els = document.querySelectorAll('.scroll-3d, .section-3d');
     if ('IntersectionObserver' in window) {
       var observer = new IntersectionObserver(function (entries) { entries.forEach(function (entry) { if (entry.isIntersecting) entry.target.classList.add('is-visible'); }); }, { threshold: 0.15 });
@@ -2082,53 +2333,58 @@ window.storyFrames.subscribe(function() {
   }
 
   /* ---------- 34) GLASSMORPHISM 2.0 & SPOTLIGHT ---------- */
-  document.querySelectorAll('.glass-shine').forEach(function (el) {
-    el.addEventListener('mousemove', function (e) {
-      var rect = this.getBoundingClientRect(); this.style.setProperty('--shine-x', ((e.clientX - rect.left) / rect.width) * 100 + '%'); this.style.setProperty('--shine-y', ((e.clientY - rect.top) / rect.height) * 100 + '%');
+  var supportsFineHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (supportsFineHover) {
+    document.querySelectorAll('.glass-shine').forEach(function (el) {
+      el.addEventListener('mousemove', function (e) {
+        var rect = this.getBoundingClientRect(); this.style.setProperty('--shine-x', ((e.clientX - rect.left) / rect.width) * 100 + '%'); this.style.setProperty('--shine-y', ((e.clientY - rect.top) / rect.height) * 100 + '%');
+      }, { passive: true });
     });
-  });
 
-  document.querySelectorAll('.spotlight-card').forEach(function (card) {
-    card.addEventListener('mousemove', function (e) {
-      var rect = this.getBoundingClientRect(), overlay = this.querySelector('.spotlight-overlay');
-      if (overlay) { overlay.style.setProperty('--mouse-x', ((e.clientX - rect.left) / rect.width) * 100 + '%'); overlay.style.setProperty('--mouse-y', ((e.clientY - rect.top) / rect.height) * 100 + '%'); }
+    document.querySelectorAll('.spotlight-card').forEach(function (card) {
+      card.addEventListener('mousemove', function (e) {
+        var rect = card.getBoundingClientRect(), overlay = card.querySelector('.spotlight-overlay');
+        if (overlay) { overlay.style.setProperty('--mouse-x', ((e.clientX - rect.left) / rect.width) * 100 + '%'); overlay.style.setProperty('--mouse-y', ((e.clientY - rect.top) / rect.height) * 100 + '%'); }
+      }, { passive: true });
     });
-  });
 
-  /* ---------- 36) MOUSE TRAILS ---------- */
-  var trailEmojis = ['❤️', '💕', '🌸', '🌹', '✨', '💖'], trailTimer = null;
-  document.addEventListener('mousemove', function(e) {
-    if (!window.isGateOpened) return;
-    if (!trailTimer) {
-      trailTimer = setTimeout(function() {
-        var trails = document.querySelectorAll('.mouse-trail'); if (trails.length > 30) trails[0].remove();
-        var el = document.createElement('div'); el.className = 'mouse-trail'; el.textContent = trailEmojis[Math.floor(Math.random() * trailEmojis.length)];
-        el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px'; el.style.fontSize = (12 + Math.random() * 14) + 'px';
-        document.body.appendChild(el); setTimeout(function() { if (el.parentNode) el.remove(); }, 800);
-        trailTimer = null;
-      }, 30);
-    }
-  });
+    /* ---------- 36) MOUSE TRAILS ---------- */
+    var trailEmojis = ['❤️', '💕', '🌸', '🌹', '✨', '💖'], trailTimer = null;
+    document.addEventListener('mousemove', function(e) {
+      if (!window.isGateOpened) return;
+      if (!trailTimer) {
+        trailTimer = setTimeout(function() {
+          var trails = document.querySelectorAll('.mouse-trail'); if (trails.length > 24) trails[0].remove();
+          var el = document.createElement('div'); el.className = 'mouse-trail'; el.textContent = trailEmojis[Math.floor(Math.random() * trailEmojis.length)];
+          el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px'; el.style.fontSize = (12 + Math.random() * 14) + 'px';
+          document.body.appendChild(el); setTimeout(function() { if (el.parentNode) el.remove(); }, 800);
+          trailTimer = null;
+        }, 45);
+      }
+    }, { passive: true });
 
-  /* ---------- 37) MAGNETIC & TILT BUTTONS ---------- */
-  document.querySelectorAll('.magnetic-btn').forEach(function (btn) {
-    btn.addEventListener('mousemove', function (e) {
-      var rect = btn.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, dist = Math.sqrt((e.clientX - cx)**2 + (e.clientY - cy)**2);
-      var strength = Math.min(1, 1 - dist / 120); btn.style.transform = `translate(${(e.clientX - cx) * 0.12 * strength}px, ${(e.clientY - cy) * 0.12 * strength}px)`;
+    /* ---------- 37) MAGNETIC & TILT BUTTONS ---------- */
+    document.querySelectorAll('.magnetic-btn').forEach(function (btn) {
+      btn.addEventListener('mousemove', function (e) {
+        var rect = btn.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, dist = Math.sqrt((e.clientX - cx)**2 + (e.clientY - cy)**2);
+        var strength = Math.min(1, 1 - dist / 120); btn.style.transform = `translate(${(e.clientX - cx) * 0.12 * strength}px, ${(e.clientY - cy) * 0.12 * strength}px)`;
+      }, { passive: true });
+      btn.addEventListener('mouseleave', function () { btn.style.transform = 'translate(0, 0)'; });
     });
-    btn.addEventListener('mouseleave', function () { btn.style.transform = 'translate(0, 0)'; });
-  });
 
-  document.querySelectorAll('.tilt-card').forEach(function (card) {
-    card.addEventListener('mousemove', function (e) {
-      var rect = card.getBoundingClientRect(), centerX = rect.width / 2, centerY = rect.height / 2;
-      card.style.transform = `rotateX(${((centerY - (e.clientY - rect.top)) / centerY) * 8}deg) rotateY(${((e.clientX - rect.left - centerX) / centerX) * 8}deg) scale(1.02)`;
+    document.querySelectorAll('.tilt-card').forEach(function (card) {
+      card.addEventListener('mousemove', function (e) {
+        var rect = card.getBoundingClientRect(), centerX = rect.width / 2, centerY = rect.height / 2;
+        card.style.transform = `rotateX(${((centerY - (e.clientY - rect.top)) / centerY) * 8}deg) rotateY(${((e.clientX - rect.left - centerX) / centerX) * 8}deg) scale(1.02)`;
+      }, { passive: true });
+      card.addEventListener('mouseleave', function () { card.style.transform = 'rotateX(0deg) rotateY(0deg) scale(1)'; });
     });
-    card.addEventListener('mouseleave', function () { card.style.transform = 'rotateX(0deg) rotateY(0deg) scale(1)'; });
-  });
+  }
 
   /* ---------- MEDIA PREWARM + OFFSCREEN LIFECYCLE ---------- */
-  var deferredBackgrounds = document.querySelectorAll('[data-bg]:not(.night-bg-img)');
+  var deferredBackgrounds = Array.from(document.querySelectorAll('[data-bg]:not(.night-bg-img)')).filter(function (element) {
+    return !element.closest('#epilogue');
+  });
   if ('IntersectionObserver' in window) {
     var backgroundGroups = new Map();
     deferredBackgrounds.forEach(function (element) {
@@ -2147,7 +2403,7 @@ window.storyFrames.subscribe(function() {
         });
         mediaObserver.unobserve(entry.target);
       });
-    }, { rootMargin: '125% 0px', threshold: 0.01 });
+    }, { rootMargin: '70% 0px', threshold: 0.01 });
     backgroundGroups.forEach(function (_, anchor) { mediaObserver.observe(anchor); });
 
     var sectionObserver = new IntersectionObserver(function (entries) {
@@ -2157,7 +2413,9 @@ window.storyFrames.subscribe(function() {
     }, { rootMargin: '75% 0px', threshold: 0 });
     document.querySelectorAll('.section-3d').forEach(function (section) { sectionObserver.observe(section); });
 
-    if (window.storyUseMobileAssets) {
+    // Desktop Safari cũng chịu GPU/bitmap pressure; lifecycle media áp dụng
+    // đồng nhất cho mọi thiết bị, chỉ mức prewarm thay đổi theo viewport.
+    {
       var transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
       var memoryState = new WeakMap();
 
@@ -2176,14 +2434,16 @@ window.storyFrames.subscribe(function() {
       }
 
       function releaseSectionMedia(section) {
-        section.querySelectorAll('source[srcset]').forEach(function (source) {
-          source.dataset.memorySrcset = source.getAttribute('srcset');
-          source.removeAttribute('srcset');
-        });
+        // Đổi fallback <img> trước, rồi mới tháo <source>; thứ tự ngược có thể
+        // khiến picture tải thoáng qua ảnh desktop trước khi nhận pixel rỗng.
         section.querySelectorAll('img[src]').forEach(function (image) {
           if (image.src === transparentPixel) return;
           image.dataset.memorySrc = image.getAttribute('src');
           image.setAttribute('src', transparentPixel);
+        });
+        section.querySelectorAll('source[srcset]').forEach(function (source) {
+          source.dataset.memorySrcset = source.getAttribute('srcset');
+          source.removeAttribute('srcset');
         });
         section.querySelectorAll('[data-memory-bg]').forEach(function (element) {
           element.style.removeProperty('background-image');
@@ -2197,15 +2457,25 @@ window.storyFrames.subscribe(function() {
             state.activated = true;
             if (state.released) restoreSectionMedia(entry.target);
             state.released = false;
-          } else if (state.activated && !state.released && entry.boundingClientRect.bottom < -window.innerHeight * .5) {
-            releaseSectionMedia(entry.target);
-            state.released = true;
+          } else if (state.activated && !state.released) {
+            var farAbove = entry.boundingClientRect.bottom < -window.innerHeight * .5;
+            var farBelow = entry.boundingClientRect.top > window.innerHeight * 1.5;
+            if (farAbove || farBelow) {
+              releaseSectionMedia(entry.target);
+              if (entry.target.id === 'livewall' && typeof window.storyReleasePhotoWall === 'function') {
+                window.storyReleasePhotoWall();
+              }
+              if (entry.target.querySelector('#spotify-embed') && typeof window.storyReleaseSpotify === 'function') {
+                window.storyReleaseSpotify();
+              }
+              state.released = true;
+            }
           }
           memoryState.set(entry.target, state);
         });
-      }, { rootMargin: '120% 0px', threshold: 0 });
+      }, { rootMargin: '50% 0px', threshold: 0 });
 
-      document.querySelectorAll('#act-2, #epilogue, .section-3d').forEach(function (section) {
+      document.querySelectorAll('#act-2, .section-3d').forEach(function (section) {
         memoryObserver.observe(section);
       });
     }
@@ -2215,15 +2485,70 @@ window.storyFrames.subscribe(function() {
     });
   }
 
+  /* ---------- CHAPTER LIFECYCLE ---------- */
+  var storyChapters = [
+    document.getElementById('night-garden'),
+    document.getElementById('super-act'),
+    document.getElementById('act-1'),
+    document.getElementById('act-2'),
+    document.getElementById('act-3'),
+    document.getElementById('epilogue'),
+    document.querySelector('.grand-finale')
+  ].filter(Boolean);
+
+  if ('IntersectionObserver' in window) {
+    var chapterObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        entry.target.classList.toggle('story-chapter-near', entry.isIntersecting);
+        entry.target.classList.toggle('story-chapter-dormant', !entry.isIntersecting);
+        if (!entry.isIntersecting) {
+          entry.target.querySelectorAll('.story-runtime-active').forEach(function (scene) {
+            window.storySetSceneActivity(scene, false);
+          });
+        }
+        if (entry.target.id === 'night-garden') {
+          if (entry.isIntersecting && window.isGateOpened) loadDeferredNightBackgrounds();
+          else if (!entry.isIntersecting && entry.boundingClientRect.bottom < 0) releaseNightBackgrounds();
+        }
+      });
+    }, { rootMargin: '80% 0px', threshold: 0 });
+    storyChapters.forEach(function (chapter) { chapterObserver.observe(chapter); });
+  } else {
+    storyChapters.forEach(function (chapter) { chapter.classList.add('story-chapter-near'); });
+  }
+
   /* ---------- SLIDESHOW ẢNH NỀN NIGHT GARDEN ---------- */
-  var nightImages = document.querySelectorAll('.night-bg-img');
+  var nightImages = Array.from(document.querySelectorAll('.night-bg-img'));
+  if (nightImages[0] && !nightImages[0].dataset.memoryBg) nightImages[0].dataset.memoryBg = 'images/anh_nen_1.jpg';
+  nightImages.forEach(function (image) {
+    if (image.dataset.bg && !image.dataset.memoryBg) image.dataset.memoryBg = image.dataset.bg;
+  });
+
+  function mountNightImage(index) {
+    var image = nightImages[index];
+    if (!image || !image.dataset.memoryBg) return;
+    image.style.backgroundImage = 'url("' + window.storyImageSource(image.dataset.memoryBg) + '")';
+  }
+
+  function releaseNightBackgrounds() {
+    nightImages.forEach(function (image) { image.style.backgroundImage = 'none'; });
+  }
+
+  function keepNightWindow(center) {
+    if (!nightImages.length) return;
+    var next = (center + 1) % nightImages.length;
+    mountNightImage(center);
+    mountNightImage(next);
+    window.setTimeout(function () {
+      nightImages.forEach(function (image, index) {
+        if (index !== center && index !== next) image.style.backgroundImage = 'none';
+      });
+    }, 2600);
+  }
+
   function loadDeferredNightBackgrounds() {
     var load = function() {
-      nightImages.forEach(function(image) {
-        if (!image.dataset.bg) return;
-        image.style.backgroundImage = 'url("' + window.storyImageSource(image.dataset.bg) + '")';
-        delete image.dataset.bg;
-      });
+      keepNightWindow(typeof currentNightImg === 'number' ? currentNightImg : 0);
     };
     if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1800 });
     else setTimeout(load, 400);
@@ -2234,6 +2559,7 @@ window.storyFrames.subscribe(function() {
       if (!sparkleInView || document.hidden) return;
       nightImages[currentNightImg].classList.remove('active');
       currentNightImg = (currentNightImg + 1) % nightImages.length;
+      keepNightWindow(currentNightImg);
       nightImages[currentNightImg].classList.add('active');
     }, 5000);
   }
@@ -2248,17 +2574,26 @@ if (optCanvas) {
   var oWidth, oHeight;
   var lights = [];
   var compactOptics = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
-  var safariOptics = Boolean(window.storyIsSafari);
+  var safariOptics = Boolean(window.storyIsSafari || window.storyMobilePerformance);
   var totalLights = compactOptics ? 14 : (safariOptics ? 16 : 20);
   var currentZone = 1; // Bắt buộc khởi đầu ở Zone 1 (Mới quen)
-  var opticsFrame = 0;
+  var opticsActive = false;
+  var opticsBufferReleased = true;
+  var initialOpticsViewport = window.storyViewport.current();
+  oWidth = initialOpticsViewport.width;
+  oHeight = initialOpticsViewport.height;
+  optCanvas.width = 1;
+  optCanvas.height = 1;
 
-  function resizeOptics() {
-    oWidth = optCanvas.width = window.innerWidth;
-    oHeight = optCanvas.height = window.innerHeight;
+  function resizeOptics(viewport) {
+    oWidth = viewport.width;
+    oHeight = viewport.height;
+    if (opticsBufferReleased) return;
+    if (optCanvas.width === oWidth && optCanvas.height === oHeight) return;
+    optCanvas.width = oWidth;
+    optCanvas.height = oHeight;
   }
-  window.addEventListener('resize', resizeOptics);
-  resizeOptics();
+  window.storyViewport.subscribe(resizeOptics);
 
   // Hàm vẽ Bokeh lục giác
   function drawHexagon(ctx, x, y, r) {
@@ -2282,18 +2617,31 @@ if (optCanvas) {
     this.currentRadius = this.baseRadius;
     this.vx = 0;
     this.vy = 0;
-    this.history = [];
+    this.historyCapacity = compactOptics ? 7 : (safariOptics ? 8 : 10);
+    this.historyX = new Float32Array(this.historyCapacity);
+    this.historyY = new Float32Array(this.historyCapacity);
+    this.historyStart = 0;
+    this.historyCount = 0;
     this.speed = 0.55 + Math.random() * 0.45;
   };
 
 LightNode.prototype.update = function (zone) {
-    if (zone !== 3 && this.history.length > 0) {
-      this.history = [];
+    if (zone !== 3 && this.historyCount > 0) {
+      this.historyStart = 0;
+      this.historyCount = 0;
     }
 
     if (zone === 3) {
-      this.history.push({ x: this.x, y: this.y });
-      if (this.history.length > (compactOptics ? 7 : (safariOptics ? 8 : 10))) this.history.shift();
+      var historyIndex;
+      if (this.historyCount < this.historyCapacity) {
+        historyIndex = (this.historyStart + this.historyCount) % this.historyCapacity;
+        this.historyCount++;
+      } else {
+        historyIndex = this.historyStart;
+        this.historyStart = (this.historyStart + 1) % this.historyCapacity;
+      }
+      this.historyX[historyIndex] = this.x;
+      this.historyY[historyIndex] = this.y;
     }
 
     // VẬT LÝ & TÂM LÝ
@@ -2326,7 +2674,8 @@ LightNode.prototype.update = function (zone) {
     // Tái sinh
     if (this.y < -150 || this.y > oHeight + 150) {
       this.x = Math.random() * oWidth;
-      this.history = [];
+      this.historyStart = 0;
+      this.historyCount = 0;
       if (zone === 3) {
         this.y = (window.act3StreakDirection || -1) < 0 ? oHeight + 80 : -80;
         this.vy = 0;
@@ -2363,11 +2712,13 @@ LightNode.prototype.draw = function (zone) {
       oCtx.fill();
     } 
     else if (zone === 3) {
-      if (this.history.length > 1) {
+      if (this.historyCount > 1) {
+        var firstHistoryIndex = this.historyStart;
         oCtx.beginPath();
-        oCtx.moveTo(this.history[0].x, this.history[0].y);
-        for (let i = 1; i < this.history.length; i++) {
-          oCtx.lineTo(this.history[i].x, this.history[i].y);
+        oCtx.moveTo(this.historyX[firstHistoryIndex], this.historyY[firstHistoryIndex]);
+        for (let i = 1; i < this.historyCount; i++) {
+          var pointIndex = (this.historyStart + i) % this.historyCapacity;
+          oCtx.lineTo(this.historyX[pointIndex], this.historyY[pointIndex]);
         }
         oCtx.lineCap = 'round';
         
@@ -2398,21 +2749,15 @@ LightNode.prototype.draw = function (zone) {
   }
 
   function animateOptics() {
-    opticsFrame = 0;
     if (document.hidden || !document.body.classList.contains('optics-visible')) return;
     oCtx.clearRect(0, 0, oWidth, oHeight);
     for (let i = 0; i < lights.length; i++) {
       lights[i].update(currentZone);
       lights[i].draw(currentZone);
     }
-    opticsFrame = requestAnimationFrame(animateOptics);
   }
 
-  function scheduleOptics() {
-    if (!opticsFrame && !document.hidden && document.body.classList.contains('optics-visible')) {
-      opticsFrame = requestAnimationFrame(animateOptics);
-    }
-  }
+  var opticsAnimation = window.storyAnimations.register('optics', animateOptics);
 
 /* =========================================================
      BỘ ĐIỀU PHỐI ZONE (CHỈ KÍCH HOẠT TẠI ACT 1, 2, 3)
@@ -2460,110 +2805,37 @@ LightNode.prototype.draw = function (zone) {
     if (isOpticsActive) {
       document.body.classList.add('optics-visible');
       currentZone = targetZone;
-      scheduleOptics();
+      if (opticsBufferReleased) {
+        optCanvas.width = oWidth;
+        optCanvas.height = oHeight;
+        opticsBufferReleased = false;
+      }
+      opticsActive = true;
+      opticsAnimation.setActive(true);
     } else {
       // Fade out Canvas đi, trả lại sân khấu cho cánh hoa
       document.body.classList.remove('optics-visible');
-      oCtx.clearRect(0, 0, oWidth, oHeight);
+      if (opticsActive) oCtx.clearRect(0, 0, oWidth, oHeight);
+      opticsActive = false;
+      opticsAnimation.setActive(false);
+      if (!opticsBufferReleased) {
+        optCanvas.width = 1;
+        optCanvas.height = 1;
+        opticsBufferReleased = true;
+      }
     }
   }
 
   window.storyFrames.subscribe(updateOpticsZone);
-  document.addEventListener('visibilitychange', scheduleOptics);
 
   // Gọi thử hàm scroll 1 lần lúc vừa load xong web để set trạng thái ban đầu
   updateOpticsZone();
 }
 
 /* ==========================================================================
-   DUAL PERSPECTIVE SLIDER ENGINE — MORPH EDITION (NÂNG CẤP)
+   ACT I — KÍNH SƯƠNG MÙ TƯƠNG TÁC
    ========================================================================== */
 window.addEventListener('DOMContentLoaded', () => {
-  try {
-    const splitContainers = document.querySelectorAll('.split-perspective');
-
-    splitContainers.forEach(container => {
-      let isDragging = false;
-
-      // Lấy nội dung từ data attributes
-      const groomText = container.dataset.groomText || '';
-      const brideText = container.dataset.brideText || '';
-      const centerText = container.dataset.centerText || '';
-      const quoteEl = container.querySelector('.split-quote');
-
-      const startDrag = (e) => {
-        isDragging = true;
-        updateSlider(e);
-      };
-
-      const stopDrag = () => {
-        isDragging = false;
-      };
-
-      const updateSlider = (e) => {
-        if (!isDragging) return;
-
-        let clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-        let rect = container.getBoundingClientRect();
-        let x = clientX - rect.left;
-        let percentage = (x / rect.width) * 100;
-
-        if (percentage < 5) percentage = 5;
-        if (percentage > 95) percentage = 95;
-
-        // Cập nhật vị trí thanh kéo
-        container.style.setProperty('--split-pos', `${percentage}%`);
-
-        // ===== MORPH LOGIC =====
-        if (percentage < 40) {
-          // Góc nhìn Chú rể
-          if (quoteEl) quoteEl.textContent = groomText;
-          container.style.setProperty('--warmth-opacity', '0.25');
-          container.style.setProperty('--coolness-opacity', '0.05');
-          container.classList.remove('show-quote');
-        } else if (percentage > 60) {
-          // Góc nhìn Cô dâu
-          if (quoteEl) quoteEl.textContent = brideText;
-          container.style.setProperty('--warmth-opacity', '0.05');
-          container.style.setProperty('--coolness-opacity', '0.25');
-          container.classList.remove('show-quote');
-        } else {
-          // Ở giữa (40%–60%): hiển thị thông điệp chung
-          if (quoteEl) quoteEl.textContent = centerText;
-          container.classList.add('show-quote');
-          // Đưa màu về trung tính
-          container.style.setProperty('--warmth-opacity', '0');
-          container.style.setProperty('--coolness-opacity', '0');
-        }
-        // ===== END MORPH =====
-      };
-
-      // Lắng nghe sự kiện Chuột
-      container.addEventListener('mousedown', startDrag);
-      window.addEventListener('mouseup', stopDrag);
-      window.addEventListener('mousemove', updateSlider);
-
-      // Lắng nghe sự kiện Cảm ứng
-      container.addEventListener('touchstart', startDrag, { passive: true });
-      window.addEventListener('touchend', stopDrag);
-      window.addEventListener('touchmove', updateSlider, { passive: true });
-
-      // ===== THIẾT LẬP TRẠNG THÁI KHỞI TẠO =====
-      // Ép thanh kéo về giữa (50%) và hiển thị thông điệp chung
-      container.style.setProperty('--split-pos', '50%');
-      container.classList.add('show-quote');
-      if (quoteEl) quoteEl.textContent = centerText;
-      // Đặt màu trung tính
-      container.style.setProperty('--hue-groom', '0');
-      container.style.setProperty('--hue-bride', '0');
-    });
-  } catch (error) {
-    console.error("Lỗi Dual Perspective Morph:", error);
-  }
-
-/* ==========================================================
-     ACT 1: KÍNH SƯƠNG MÙ TƯƠNG TÁC
-     ========================================================== */
   function initFogCanvas() {
     const canvas = document.getElementById('fog-canvas');
     if (!canvas) return;
@@ -2596,7 +2868,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let isUnlocked = false;
     let scrollReleased = false;
     let resizeFrame = 0;
-    let animationFrame = 0;
+    let unsubscribeFogViewport = function () {};
     let lastRenderAt = 0;
     let lastAreaCheckAt = 0;
     let wisps = [];
@@ -2609,7 +2881,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     function buildFogDetails() {
       const compactFog = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches;
-      const safariFog = Boolean(window.storyIsSafari);
+      const safariFog = Boolean(window.storyIsSafari || window.storyMobilePerformance);
       wisps = Array.from({ length: compactFog ? 7 : (safariFog ? 8 : 10) }, (_, i) => ({
         x: (0.08 + ((i * 0.137) % 0.86)) * fogWidth,
         y: (0.08 + ((i * 0.219) % 0.84)) * fogHeight,
@@ -2653,7 +2925,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       const compactFog = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches;
-      const ratioLimit = compactFog ? 1 : (window.storyIsSafari ? 1.25 : 1.75);
+      const ratioLimit = compactFog ? 1 : (window.storyIsSafari || window.storyMobilePerformance ? 1.25 : 1.75);
       pixelRatio = Math.min(window.devicePixelRatio || 1, ratioLimit);
       fogWidth = Math.max(1, Math.round(rect.width * pixelRatio));
       fogHeight = Math.max(1, Math.round(rect.height * pixelRatio));
@@ -2665,6 +2937,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (oldMask.width && oldMask.height) {
         maskCtx.drawImage(oldMask, 0, 0, oldMask.width, oldMask.height, 0, 0, fogWidth, fogHeight);
       }
+      oldMask.width = 1;
+      oldMask.height = 1;
 
       buildFogDetails();
       renderFog(performance.now());
@@ -2735,8 +3009,9 @@ window.addEventListener('DOMContentLoaded', () => {
         renderFog(now);
         lastRenderAt = now;
       }
-      animationFrame = requestAnimationFrame(animateFog);
     }
+
+    const fogAnimation = window.storyAnimations.register('fog', animateFog);
 
     function getPoint(e) {
       const rect = canvas.getBoundingClientRect();
@@ -2798,7 +3073,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (isUnlocked) return;
       isUnlocked = true;
       activePointer = null;
-      cancelAnimationFrame(animationFrame);
+      fogAnimation.setActive(false);
+      unsubscribeFogViewport();
       cancelAnimationFrame(resizeFrame);
 
       // Trong lúc lau, một số cách điều hướng vẫn có thể làm scrollY tiến vào ACT I.
@@ -2831,7 +3107,7 @@ window.addEventListener('DOMContentLoaded', () => {
           buffer.height = 1;
         });
         window.dispatchEvent(new Event('act1:fog-cleared'));
-        window.dispatchEvent(new Event('resize'));
+        window.storyFrames.request();
       }, revealDelay);
     }
 
@@ -2883,13 +3159,12 @@ window.addEventListener('DOMContentLoaded', () => {
     canvas.addEventListener('lostpointercapture', pointerEnd, { signal: listeners.signal });
     window.addEventListener('wheel', holdScrollAtFog, { capture: true, passive: false, signal: listeners.signal });
     if (skipButton) skipButton.addEventListener('click', unlockFog, { signal: listeners.signal });
-    window.addEventListener('resize', () => {
+    unsubscribeFogViewport = window.storyViewport.subscribe(() => {
       cancelAnimationFrame(resizeFrame);
       resizeFrame = requestAnimationFrame(resizeCanvas);
-    }, { signal: listeners.signal });
+    });
 
-    resizeCanvas();
-    if (!reduceMotion) animationFrame = requestAnimationFrame(animateFog);
+    if (!reduceMotion) fogAnimation.setActive(true);
   }
 
   // Timeline Rewind được khởi tạo trong một DOMContentLoaded listener khác.
@@ -2922,6 +3197,7 @@ window.addEventListener('DOMContentLoaded', () => {
   var starPositions = [];
   var connections = [];
   var scrollProgress = 0;
+  var constellationNear = false;
   // Ba cạnh đầu là cán; bốn cạnh cuối khép thành phần "gáo" của Bắc Đẩu.
   var dipperSegments = [
     [0, 1], [1, 2], [2, 3],
@@ -2932,14 +3208,33 @@ window.addEventListener('DOMContentLoaded', () => {
   stars.forEach(function(star) { star.setAttribute('tabindex', '-1'); });
 
   function resizeCanvas() {
+    if (!constellationNear) return;
     var rect = container.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    if (canvas.width === Math.round(rect.width) && canvas.height === Math.round(rect.height)) return;
     canvas.width = rect.width;
     canvas.height = rect.height;
     getStarPositions();
     drawConstellation();
   }
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
+  window.storyViewport.subscribe(function () { resizeCanvas(); });
+  if ('ResizeObserver' in window) new ResizeObserver(resizeCanvas).observe(container);
+
+  var constellationAnchor = document.getElementById('act-2') || container;
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      constellationNear = entries.some(function (entry) { return entry.isIntersecting; });
+      if (constellationNear) {
+        resizeCanvas();
+      } else {
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    }, { rootMargin: '60% 0px', threshold: 0 }).observe(constellationAnchor);
+  } else {
+    constellationNear = true;
+    resizeCanvas();
+  }
 
   function getStarPositions() {
     starPositions = [];
@@ -2949,9 +3244,8 @@ window.addEventListener('DOMContentLoaded', () => {
       starPositions.push({ x: x, y: y, id: parseInt(star.dataset.id) });
     });
   }
-  getStarPositions();
-
   function drawConstellation() {
+    if (!constellationNear) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (starPositions.length < 2) return;
@@ -3134,11 +3428,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Khởi tạo
-  setTimeout(function() {
-    resizeCanvas();
-  }, 300);
-
 })();
 /* ==========================================================================
    NARRATIVE SCROLL ENGINE — ACT II / ACT III / EPILOGUE / GRAND FINALE
@@ -3149,8 +3438,22 @@ window.addEventListener('DOMContentLoaded', () => {
   const act3 = document.getElementById('act-3');
   const epilogue = document.getElementById('epilogue');
   const finale = document.querySelector('.grand-finale');
+  const act2Heading = act2?.querySelector('.a2-heading');
+  const act2Memory = act2?.querySelector('.a2-memory-stream');
+  const act2Constellation = act2?.querySelector('.constellation-section');
+  const act3HeadingParts = act3 ? Array.from(act3.querySelectorAll(':scope > .act-scroll-stage > .act-number, :scope > .act-scroll-stage > .act-title, :scope > .act-scroll-stage > .act-intro')) : [];
+  const act3Unpromise = act3?.querySelector('.unpromise-list');
+  const act3VowPages = act3?.querySelector('.a3-vow-pages');
+  const act3LightField = act3?.querySelector('.a3-light-field');
+  const act3Promises = document.getElementById('act-3-promises');
+  const act3Signatures = document.getElementById('act-3-signatures');
+  const act3ProposalCue = document.getElementById('a3-proposal-cue');
+  const epiFocusScene = document.getElementById('epilogue-focus-scene');
+  const epiAlbumScene = document.getElementById('gallery');
+  const epiCoupleScene = document.getElementById('couple');
+  const epiAnnouncementScene = document.getElementById('events');
+  const epiFutureScene = document.getElementById('future-timeline');
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let narrativeFrame = 0;
 
   document.querySelectorAll('#did-grid .did-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -3192,6 +3495,10 @@ window.addEventListener('DOMContentLoaded', () => {
     act2.style.setProperty('--a2-left-rotate', `${(-8 * (1 - gather)).toFixed(2)}deg`);
     act2.style.setProperty('--a2-right-rotate', `${(8 * (1 - gather)).toFixed(2)}deg`);
 
+    window.storySetSceneActivity(act2Heading, titleOpacity > .002, 'block');
+    window.storySetSceneActivity(act2Memory, memoryOpacity > .002, 'block');
+    window.storySetSceneActivity(act2Constellation, constellationOpacity > .002, 'grid');
+
     const constellationProgress = segment(progress, .34, .9);
     window.act2OpticsProgress = segment(progress, .08, .86);
     if (typeof window.setConstellationScrollProgress === 'function') {
@@ -3230,16 +3537,20 @@ window.addEventListener('DOMContentLoaded', () => {
       item.classList.toggle('visible', isVisible);
     });
 
-    const promises = document.getElementById('act-3-promises');
-    const signatures = document.getElementById('act-3-signatures');
-    const proposalCue = document.getElementById('a3-proposal-cue');
     const promiseActive = progress >= .59 && progress < .85;
     const signaturesActive = progress >= .83 && progress < .93;
     const cueActive = progress >= .895 && progress < .999;
 
-    promises?.classList.toggle('active', promiseActive);
-    signatures?.classList.toggle('active', signaturesActive);
-    proposalCue?.classList.toggle('show', cueActive);
+    act3HeadingParts.forEach(part => window.storySetSceneActivity(part, headingOpacity > .002, 'block'));
+    window.storySetSceneActivity(act3Unpromise, unpromiseOpacity > .002, 'block');
+    window.storySetSceneActivity(act3VowPages, pagesOpacity > .002 || mergeOpacity > .002, 'block');
+    window.storySetSceneActivity(act3LightField, lightOpacity > .002, 'block');
+    window.storySetSceneActivity(act3Promises, promiseActive, 'flex');
+    window.storySetSceneActivity(act3Signatures, signaturesActive, 'flex');
+    window.storySetSceneActivity(act3ProposalCue, cueActive, 'block');
+    act3Promises?.classList.toggle('active', promiseActive);
+    act3Signatures?.classList.toggle('active', signaturesActive);
+    act3ProposalCue?.classList.toggle('show', cueActive);
     act3.classList.toggle('streaks-down', progress >= .91);
 
     const ringThresholds = [.62, .71, .80];
@@ -3277,6 +3588,12 @@ window.addEventListener('DOMContentLoaded', () => {
     const coupleTravel = Math.min(window.innerWidth * .28, 330) * (1 - coupleProgress);
     const albumTrack = document.getElementById('gallery-wrapper');
     const albumTravel = albumTrack ? Math.max(0, albumTrack.scrollWidth - window.innerWidth * .76) : 0;
+    if (typeof window.storySetAlbumProgress === 'function') {
+      window.storySetAlbumProgress(albumProgress, progress >= .29 && progress <= .72);
+    }
+    if (typeof window.storySetEpilogueMedia === 'function') {
+      window.storySetEpilogueMedia(progress < .39, progress >= .57 && progress <= .9);
+    }
 
     epilogue.style.setProperty('--epi-progress', progress.toFixed(4));
     epilogue.style.setProperty('--epi-focus-opacity', focusOpacity.toFixed(4));
@@ -3294,19 +3611,19 @@ window.addEventListener('DOMContentLoaded', () => {
       window.setEpilogueFocus(focusValue * 100, false);
     }
 
-    const focusScene = document.getElementById('epilogue-focus-scene');
-    const albumScene = document.getElementById('gallery');
-    const coupleScene = document.getElementById('couple');
-    const announcementScene = document.getElementById('events');
-    const futureScene = document.getElementById('future-timeline');
-    if (focusScene) focusScene.style.pointerEvents = focusOpacity > .2 ? 'auto' : 'none';
-    if (albumScene) albumScene.style.pointerEvents = albumOpacity > .55 ? 'auto' : 'none';
-    if (coupleScene) coupleScene.style.pointerEvents = coupleOpacity > .55 ? 'auto' : 'none';
-    if (announcementScene) announcementScene.style.pointerEvents = announcementOpacity > .55 ? 'auto' : 'none';
-    if (futureScene) futureScene.style.pointerEvents = futureOpacity > .55 ? 'auto' : 'none';
+    window.storySetSceneActivity(epiFocusScene, focusOpacity > .002, 'flex');
+    window.storySetSceneActivity(epiAlbumScene, albumOpacity > .002, 'flex');
+    window.storySetSceneActivity(epiCoupleScene, coupleOpacity > .002, 'flex');
+    window.storySetSceneActivity(epiAnnouncementScene, announcementOpacity > .002, 'flex');
+    window.storySetSceneActivity(epiFutureScene, futureOpacity > .002, 'flex');
+    if (epiFocusScene) epiFocusScene.style.pointerEvents = focusOpacity > .2 ? 'auto' : 'none';
+    if (epiAlbumScene) epiAlbumScene.style.pointerEvents = albumOpacity > .55 ? 'auto' : 'none';
+    if (epiCoupleScene) epiCoupleScene.style.pointerEvents = coupleOpacity > .55 ? 'auto' : 'none';
+    if (epiAnnouncementScene) epiAnnouncementScene.style.pointerEvents = announcementOpacity > .55 ? 'auto' : 'none';
+    if (epiFutureScene) epiFutureScene.style.pointerEvents = futureOpacity > .55 ? 'auto' : 'none';
 
-    futureScene?.querySelector('.quote-part-1')?.classList.toggle('show', progress >= .94);
-    futureScene?.querySelector('.quote-part-2')?.classList.toggle('show', progress >= .97);
+    epiFutureScene?.querySelector('.quote-part-1')?.classList.toggle('show', progress >= .94);
+    epiFutureScene?.querySelector('.quote-part-2')?.classList.toggle('show', progress >= .97);
 
     const progressFill = document.getElementById('epilogue-progress-fill');
     const progressText = document.getElementById('epilogue-progress-text');
@@ -3317,38 +3634,50 @@ window.addEventListener('DOMContentLoaded', () => {
   function renderFinale(knownRect) {
     if (!finale) return;
     const rect = knownRect || finale.getBoundingClientRect();
+    if (!document.body.classList.contains('act0-rewound') || rect.height < 2) {
+      document.body.classList.remove('finale-in-view', 'past-finale');
+      if (typeof window.storySetPetalsActive === 'function') window.storySetPetalsActive(true);
+      return;
+    }
     const progress = clamp((window.innerHeight - rect.top) / (window.innerHeight * 1.25));
     const thresholds = [.06, .22, .39, .57];
     thresholds.forEach((threshold, index) => {
       finale.classList.toggle(`step-${index + 1}`, progress >= threshold);
     });
-    document.body.classList.toggle('finale-in-view', rect.top < window.innerHeight && rect.bottom > 0);
-    document.body.classList.toggle('past-finale', rect.bottom <= 0);
+    const isFinaleVisible = rect.top < window.innerHeight && rect.bottom > 0;
+    const isPastFinale = rect.bottom <= 0;
+    document.body.classList.toggle('finale-in-view', isFinaleVisible);
+    document.body.classList.toggle('past-finale', isPastFinale);
+    if (typeof window.storySetPetalsActive === 'function') window.storySetPetalsActive(!isPastFinale);
   }
 
   function renderNarrative() {
-    narrativeFrame = 0;
     const viewportHeight = window.innerHeight;
     const act2Rect = act2?.getBoundingClientRect();
     const act3Rect = act3?.getBoundingClientRect();
     const epilogueRect = epilogue?.getBoundingClientRect();
     const finaleRect = finale?.getBoundingClientRect();
-    const isNear = rect => rect && rect.top < viewportHeight * 2 && rect.bottom > -viewportHeight;
-    const occupiesViewport = rect => rect && rect.top < viewportHeight && rect.bottom > 0;
+    const isNear = rect => rect && rect.height > 2 && rect.top < viewportHeight * 2 && rect.bottom > -viewportHeight;
+    const occupiesViewport = rect => rect && rect.height > 2 && rect.top < viewportHeight && rect.bottom > 0;
+    const coolChapter = chapter => chapter?.querySelectorAll('.story-runtime-active').forEach(scene => {
+      window.storySetSceneActivity(scene, false);
+    });
 
     // Chỉ ghi style cho scene đang tới gần; section xa không còn chiếm main thread.
-    if (isNear(act2Rect)) renderAct2(act2Rect);
-    if (isNear(act3Rect)) renderAct3(act3Rect);
-    if (isNear(epilogueRect)) renderEpilogue(epilogueRect);
+    if (isNear(act2Rect)) renderAct2(act2Rect); else coolChapter(act2);
+    if (isNear(act3Rect)) renderAct3(act3Rect); else coolChapter(act3);
+    if (isNear(epilogueRect)) {
+      renderEpilogue(epilogueRect);
+    } else {
+      coolChapter(epilogue);
+      if (typeof window.storySetAlbumProgress === 'function') window.storySetAlbumProgress(0, false);
+      if (typeof window.storySetEpilogueMedia === 'function') window.storySetEpilogueMedia(false, false);
+    }
     renderFinale(finaleRect);
     document.body.classList.toggle('narrative-petals-hidden', occupiesViewport(act2Rect) || occupiesViewport(act3Rect) || occupiesViewport(epilogueRect));
   }
 
-  function scheduleNarrativeRender() {
-    if (!narrativeFrame) narrativeFrame = requestAnimationFrame(renderNarrative);
-  }
-
-  window.storyFrames.subscribe(scheduleNarrativeRender);
+  window.storyFrames.subscribe(renderNarrative);
   renderNarrative();
 
   if (reduceMotion) {

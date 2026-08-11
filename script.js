@@ -1950,6 +1950,7 @@ window.storyFrames.subscribe(function() {
   }
 
   var uploadInput = document.getElementById('photo-upload-input'), uploadHint = document.getElementById('upload-hint');
+  var photoUploadPreview = document.getElementById('photo-upload-preview'), photoUploadPreviewImage = document.getElementById('photo-upload-preview-image');
   function preparePhoto(file) {
     if (!window.WeddingAPI?.compressPhoto) return Promise.resolve(null);
     return window.WeddingAPI.compressPhoto(file, {
@@ -1959,60 +1960,92 @@ window.storyFrames.subscribe(function() {
     });
   }
   if (uploadInput) {
-    if (window.WeddingAPI) window.WeddingAPI.mountTurnstile('photo-turnstile').catch(function () {});
-    uploadInput.addEventListener('change', function () {
-      var files = Array.prototype.slice.call(uploadInput.files || []).slice(0, 1); if (!files.length) return;
-      initPhotoWall();
-      if (!window.WeddingAPI) { if (uploadHint) uploadHint.textContent = 'Kho ảnh chưa sẵn sàng. Vui lòng thử lại sau.'; return; }
-      var photoToken = window.WeddingAPI.turnstileToken('photo-turnstile');
-      var photoTurnstile = document.getElementById('photo-turnstile');
-      if (photoTurnstile && !photoTurnstile.hidden && !photoToken) {
-        if (uploadHint) uploadHint.textContent = 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi chọn lại ảnh.';
-        uploadInput.value = '';
-        return;
-      }
-      if (uploadHint) { uploadHint.textContent = 'Đang chuẩn bị và gửi ảnh…'; uploadHint.style.color = 'var(--text-muted)'; }
-      var uploadedCount = 0;
-      var failedCount = 0;
-      // Xử lý và upload tuần tự: ảnh camera lớn không còn decode đồng thời trên mobile.
-      files.reduce(function (promise, file) {
-        return promise.then(function () {
-          return preparePhoto(file).then(async function (blob) {
-            if (!blob) { failedCount += 1; return; }
-            var preview = { src: URL.createObjectURL(blob), caption: 'Đang gửi khoảnh khắc…', local: true };
-            uploadedPhotos.unshift(preview);
-            uploadedPhotos = uploadedPhotos.slice(0, MAX_STORED_PHOTOS);
-            renderPhotoMarquee();
-            try {
-              var response = await window.WeddingAPI.submitPhoto({
-                context: 'story',
-                website: document.getElementById('photo-website')?.value || '',
-                guestSlug: window.WeddingAPI.invitationSlug(),
-                turnstileToken: photoToken
-              }, blob);
-              URL.revokeObjectURL(preview.src);
-              preview.src = response.photo.url;
-              preview.caption = response.photo.caption || 'Một khoảnh khắc vừa được chia sẻ';
-              preview.local = false;
-              renderPhotoMarquee();
-              uploadedCount += 1;
-            } catch (error) {
-              failedCount += 1;
-              URL.revokeObjectURL(preview.src);
-              uploadedPhotos = uploadedPhotos.filter(function (item) { return item !== preview; });
-              renderPhotoMarquee();
-            }
-          });
+    var photoTurnstile = document.getElementById('photo-turnstile');
+    var pendingPhotoBlob = null;
+    var pendingPhotoPreviewUrl = '';
+    var photoUploadRunning = false;
+    var photoSelectionId = 0;
+
+    function setPhotoUploadStatus(message, color) {
+      if (!uploadHint) return;
+      uploadHint.hidden = !message;
+      uploadHint.textContent = message || '';
+      uploadHint.style.color = color || 'var(--text-muted)';
+    }
+
+    function clearPendingPhoto() {
+      if (pendingPhotoPreviewUrl) URL.revokeObjectURL(pendingPhotoPreviewUrl);
+      pendingPhotoPreviewUrl = '';
+      pendingPhotoBlob = null;
+      if (photoUploadPreview) photoUploadPreview.hidden = true;
+      if (photoUploadPreviewImage) photoUploadPreviewImage.removeAttribute('src');
+      if (photoTurnstile) photoTurnstile.hidden = true;
+    }
+
+    async function submitPendingPhoto() {
+      if (!pendingPhotoBlob || photoUploadRunning || !window.WeddingAPI) return;
+      var token = window.WeddingAPI.turnstileToken('photo-turnstile');
+      if (photoTurnstile && !photoTurnstile.hidden && !token) return;
+      photoUploadRunning = true;
+      uploadInput.disabled = true;
+      setPhotoUploadStatus('Đang gửi khoảnh khắc của bạn…');
+      try {
+        var response = await window.WeddingAPI.submitPhoto({
+          context: 'story',
+          website: document.getElementById('photo-website')?.value || '',
+          guestSlug: window.WeddingAPI.invitationSlug(),
+          turnstileToken: token
+        }, pendingPhotoBlob);
+        uploadedPhotos.unshift({
+          id: response.photo.id,
+          src: response.photo.url,
+          caption: response.photo.caption || 'Một khoảnh khắc vừa được chia sẻ',
+          local: false
         });
-      }, Promise.resolve()).then(function () {
-        if (uploadHint) {
-          uploadHint.textContent = uploadedCount ? 'Đã đăng ' + uploadedCount + ' ảnh lên album.' : 'Chưa thể gửi ảnh. Vui lòng thử lại sau.';
-          uploadHint.style.color = uploadedCount ? '#5B6B4F' : '#C08D82';
-          if (failedCount && uploadedCount) uploadHint.textContent += ' ' + failedCount + ' ảnh chưa gửi được.';
-        }
+        uploadedPhotos = uploadedPhotos.slice(0, MAX_STORED_PHOTOS);
+        renderPhotoMarquee();
+        clearPendingPhoto();
+        setPhotoUploadStatus('Ảnh đã xuất hiện trên dòng ký ức.', '#5B6B4F');
         window.WeddingAPI.resetTurnstile('photo-turnstile');
+      } catch (error) {
+        setPhotoUploadStatus(error.message || 'Chưa thể gửi ảnh. Vui lòng xác minh lại.', '#C08D82');
+        window.WeddingAPI.resetTurnstile('photo-turnstile');
+        if (photoTurnstile) photoTurnstile.hidden = false;
+      } finally {
+        photoUploadRunning = false;
+        uploadInput.disabled = false;
+      }
+    }
+
+    if (photoTurnstile) {
+      photoTurnstile.addEventListener('wedding:turnstile-ready', submitPendingPhoto);
+      photoTurnstile.addEventListener('wedding:turnstile-expired', function () {
+        if (pendingPhotoBlob) setPhotoUploadStatus('Xác minh để gửi ảnh.');
       });
+      photoTurnstile.addEventListener('wedding:turnstile-error', function () {
+        if (pendingPhotoBlob) setPhotoUploadStatus('Chưa thể xác minh. Ảnh vẫn được giữ, vui lòng thử lại.', '#C08D82');
+      });
+    }
+
+    uploadInput.addEventListener('change', async function () {
+      var file = uploadInput.files?.[0];
       uploadInput.value = '';
+      if (!file) return;
+      var selectionId = ++photoSelectionId;
+      initPhotoWall();
+      if (!window.WeddingAPI) { setPhotoUploadStatus('Kho ảnh chưa sẵn sàng. Vui lòng thử lại sau.', '#C08D82'); return; }
+      clearPendingPhoto();
+      setPhotoUploadStatus('Đang chuẩn bị ảnh…');
+      var preparedBlob = await preparePhoto(file);
+      if (selectionId !== photoSelectionId) return;
+      pendingPhotoBlob = preparedBlob;
+      if (!pendingPhotoBlob) { setPhotoUploadStatus('Trình duyệt chưa thể chuẩn bị ảnh này. Vui lòng chọn ảnh khác.', '#C08D82'); return; }
+      pendingPhotoPreviewUrl = URL.createObjectURL(pendingPhotoBlob);
+      if (photoUploadPreviewImage) photoUploadPreviewImage.src = pendingPhotoPreviewUrl;
+      if (photoUploadPreview) photoUploadPreview.hidden = false;
+      setPhotoUploadStatus('Xác minh để gửi ảnh.');
+      await window.WeddingAPI.mountTurnstile('photo-turnstile').catch(function () {});
+      if (!photoTurnstile || photoTurnstile.hidden || window.WeddingAPI.turnstileToken('photo-turnstile')) submitPendingPhoto();
     });
   }
 

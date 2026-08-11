@@ -424,17 +424,15 @@
       <div class="invite-livewall-panel invite-reveal">
         <label class="invite-live-upload" for="invite-live-photo-input">
           <span aria-hidden="true">＋</span>
-          <strong>Chọn một ảnh</strong>
-          <small>Ảnh sẽ được nén trước khi gửi</small>
+          <strong>Chọn một khoảnh khắc</strong>
         </label>
         <input type="file" id="invite-live-photo-input" accept="image/*" hidden>
-        <label class="invite-live-caption" for="invite-live-caption">
-          <span>Một dòng cho khoảnh khắc này</span>
-          <input id="invite-live-caption" type="text" maxlength="300" placeholder="Ví dụ: Khoảnh khắc cả hai cùng cười…">
-        </label>
+        <figure class="invite-live-preview" id="invite-live-preview" hidden>
+          <img id="invite-live-preview-image" alt="Ảnh đã chọn để gửi">
+        </figure>
         <input type="text" id="invite-live-website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
         <div id="invite-live-turnstile" class="turnstile-slot" hidden></div>
-        <p class="invite-live-status" id="invite-live-status" role="status">Mỗi lượt một ảnh · tự chuyển WebP, mục tiêu dưới 1,2 MB.</p>
+        <p class="invite-live-status" id="invite-live-status" role="status" hidden></p>
       </div>
       <div class="invite-live-grid" id="invite-live-grid" aria-live="polite"></div>
     </div>
@@ -621,13 +619,71 @@
       if (!window.WeddingAPI || !slug) return;
       var section = document.getElementById('invite-livewall');
       var input = document.getElementById('invite-live-photo-input');
-      var captionInput = document.getElementById('invite-live-caption');
       var status = document.getElementById('invite-live-status');
       var grid = document.getElementById('invite-live-grid');
+      var liveTurnstile = document.getElementById('invite-live-turnstile');
+      var livePreview = document.getElementById('invite-live-preview');
+      var livePreviewImage = document.getElementById('invite-live-preview-image');
+      var pendingLiveBlob = null;
+      var pendingLivePreviewUrl = '';
+      var liveUploadRunning = false;
+      var liveSelectionId = 0;
+
+      function setLiveStatus(message, color) {
+        status.hidden = !message;
+        status.textContent = message || '';
+        status.style.color = color || '';
+      }
+
+      function clearPendingLivePhoto() {
+        if (pendingLivePreviewUrl) URL.revokeObjectURL(pendingLivePreviewUrl);
+        pendingLivePreviewUrl = '';
+        pendingLiveBlob = null;
+        livePreview.hidden = true;
+        livePreviewImage.removeAttribute('src');
+        liveTurnstile.hidden = true;
+      }
+
+      async function submitPendingLivePhoto() {
+        if (!pendingLiveBlob || liveUploadRunning) return;
+        var token = window.WeddingAPI.turnstileToken('invite-live-turnstile');
+        if (!liveTurnstile.hidden && !token) return;
+        liveUploadRunning = true;
+        input.disabled = true;
+        setLiveStatus('Đang gửi khoảnh khắc của bạn…');
+        try {
+          var response = await window.WeddingAPI.submitPhoto({
+            context: 'wedding-day',
+            senderName: inviteGuestName,
+            caption: '',
+            guestSlug: slug,
+            website: document.getElementById('invite-live-website')?.value || '',
+            turnstileToken: token
+          }, pendingLiveBlob);
+          addInviteLivePhoto(grid, response.photo, true);
+          clearPendingLivePhoto();
+          setLiveStatus('Ảnh đã xuất hiện trong album của ngày hôm nay. Cảm ơn bạn!', '#5B6B4F');
+          window.WeddingAPI.resetTurnstile('invite-live-turnstile');
+        } catch (error) {
+          setLiveStatus(error.message || 'Chưa thể gửi ảnh. Vui lòng xác minh lại.', '#C08D82');
+          window.WeddingAPI.resetTurnstile('invite-live-turnstile');
+          liveTurnstile.hidden = false;
+        } finally {
+          liveUploadRunning = false;
+          input.disabled = false;
+        }
+      }
+
       window.WeddingAPI.getConfig().then(function (config) {
         if (!config?.weddingDay?.active) return;
         section.hidden = false;
-        window.WeddingAPI.mountTurnstile('invite-live-turnstile').catch(function () {});
+        liveTurnstile.addEventListener('wedding:turnstile-ready', submitPendingLivePhoto);
+        liveTurnstile.addEventListener('wedding:turnstile-expired', function () {
+          if (pendingLiveBlob) setLiveStatus('Xác minh để gửi ảnh.');
+        });
+        liveTurnstile.addEventListener('wedding:turnstile-error', function () {
+          if (pendingLiveBlob) setLiveStatus('Chưa thể xác minh. Ảnh vẫn được giữ, vui lòng thử lại.', '#C08D82');
+        });
         function refreshLivePhotos() {
           window.WeddingAPI.listPhotos('wedding-day', 24).then(function (response) {
             (response.items || []).reverse().forEach(function (photo) { addInviteLivePhoto(grid, photo, true); });
@@ -639,33 +695,19 @@
           var file = input.files?.[0];
           input.value = '';
           if (!file) return;
-          var liveToken = window.WeddingAPI.turnstileToken('invite-live-turnstile');
-          var liveTurnstile = document.getElementById('invite-live-turnstile');
-          if (liveTurnstile && !liveTurnstile.hidden && !liveToken) {
-            status.textContent = 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi chọn lại ảnh.';
-            return;
-          }
-          status.textContent = 'Đang chuẩn bị ảnh…';
-          var blob = await prepareInviteLivePhoto(file);
-          if (!blob) { status.textContent = 'Ảnh quá lớn hoặc không đúng định dạng. Vui lòng chọn ảnh khác.'; return; }
-          status.textContent = 'Đang gửi khoảnh khắc của bạn…';
-          try {
-            var response = await window.WeddingAPI.submitPhoto({
-              context: 'wedding-day',
-              senderName: inviteGuestName,
-              caption: captionInput.value.trim(),
-              guestSlug: slug,
-              website: document.getElementById('invite-live-website')?.value || '',
-              turnstileToken: liveToken
-            }, blob);
-            addInviteLivePhoto(grid, response.photo, true);
-            captionInput.value = '';
-            status.textContent = 'Ảnh đã xuất hiện trong album của ngày hôm nay. Cảm ơn bạn!';
-          } catch (error) {
-            status.textContent = error.message || 'Chưa thể gửi ảnh. Vui lòng thử lại.';
-          } finally {
-            window.WeddingAPI.resetTurnstile('invite-live-turnstile');
-          }
+          var selectionId = ++liveSelectionId;
+          clearPendingLivePhoto();
+          setLiveStatus('Đang chuẩn bị ảnh…');
+          var preparedBlob = await prepareInviteLivePhoto(file);
+          if (selectionId !== liveSelectionId) return;
+          pendingLiveBlob = preparedBlob;
+          if (!pendingLiveBlob) { setLiveStatus('Trình duyệt chưa thể chuẩn bị ảnh này. Vui lòng chọn ảnh khác.', '#C08D82'); return; }
+          pendingLivePreviewUrl = URL.createObjectURL(pendingLiveBlob);
+          livePreviewImage.src = pendingLivePreviewUrl;
+          livePreview.hidden = false;
+          setLiveStatus('Xác minh để gửi ảnh.');
+          await window.WeddingAPI.mountTurnstile('invite-live-turnstile').catch(function () {});
+          if (liveTurnstile.hidden || window.WeddingAPI.turnstileToken('invite-live-turnstile')) submitPendingLivePhoto();
         });
       }).catch(function () {});
     }

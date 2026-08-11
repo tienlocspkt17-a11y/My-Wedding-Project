@@ -68,10 +68,10 @@ html:not(.gate-open) body { overflow: visible !important; height: auto !importan
 .invite-livewall[hidden] { display: none !important; }
 .invite-livewall-panel {
   display: grid;
-  grid-template-columns: minmax(12rem, .8fr) minmax(15rem, 1.2fr);
+  grid-template-columns: 1fr;
   gap: clamp(1rem, 3vw, 2rem);
   align-items: center;
-  width: min(54rem, 100%);
+  width: min(32rem, 100%);
   margin: clamp(2rem, 5vw, 3.5rem) auto;
   padding: clamp(1rem, 3vw, 2rem);
   border: 1px solid color-mix(in srgb, var(--invite-rose) 28%, transparent);
@@ -94,6 +94,9 @@ html:not(.gate-open) body { overflow: visible !important; height: auto !importan
 .invite-live-upload > span { display: grid; place-items: center; width: 2.75rem; aspect-ratio: 1; margin-bottom: .65rem; border-radius: 50%; color: var(--invite-paper-soft); background: var(--invite-rose-dark); font-size: 1.5rem; }
 .invite-live-upload strong { color: var(--invite-ink); font: 500 1.2rem/1.2 'Playfair Display', serif; }
 .invite-live-upload small { margin-top: .35rem; color: var(--invite-muted); font-size: .72rem; }
+.invite-live-preview { width: min(16rem, 100%); margin: 0 auto; overflow: hidden; border: 1px solid color-mix(in srgb, var(--invite-rose) 28%, transparent); border-radius: 1rem; background: var(--invite-paper-soft); box-shadow: 0 .8rem 2.4rem rgba(45,29,23,.12); }
+.invite-live-preview img { display: block; width: 100%; max-height: 20rem; aspect-ratio: 4 / 5; object-fit: cover; }
+.invite-live-preview[hidden] { display: none !important; }
 .invite-live-caption { display: grid; gap: .65rem; text-align: left; }
 .invite-live-caption span { color: var(--invite-gold); font-size: .7rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
 .invite-live-caption input { width: 100%; min-height: 3.25rem; padding: .8rem 1rem; border: 1px solid color-mix(in srgb, var(--invite-muted) 30%, transparent); border-radius: .75rem; color: var(--invite-ink); background: var(--invite-paper); font: inherit; }
@@ -1723,6 +1726,10 @@ body.light-mode .theme-toggle { border-color: rgba(46, 42, 36, 0.15); background
 .upload-btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 30px; background: var(--rose-deep); color: #fff; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; transition: background .3s ease, transform .3s ease; border-radius: 8px; }
 .upload-btn svg { width: 18px; height: 18px; }
 .upload-btn:hover { background: var(--rose); transform: translateY(-1px); }
+.photo-upload-preview { width: min(14rem, 70vw); margin: 1.25rem auto 0; overflow: hidden; border: 1px solid var(--border-color); border-radius: 1rem; background: var(--bg-card); box-shadow: 0 .9rem 2.5rem var(--shadow-color); }
+.photo-upload-preview img { display: block; width: 100%; max-height: 18rem; aspect-ratio: 4 / 5; object-fit: cover; }
+.photo-upload-preview[hidden],
+.upload-hint[hidden] { display: none !important; }
 .upload-hint { margin-top: 12px; font-size: 0.78rem; color: var(--text-muted); transition: color 0.4s ease; }
 .photo-marquee .marquee-track { animation-duration: 46s; }
 .photo-marquee .marquee-track figure { flex: 0 0 auto; width: 220px; height: 280px; margin: 0; overflow: hidden; background: var(--bg-card); border-radius: 8px; transition: background 0.4s ease; }

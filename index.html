@@ -922,12 +922,15 @@
           <path d="M12 16V4M12 4L7 9M12 4l5 5" stroke="currentColor" stroke-width="1.5"/>
           <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5"/>
         </svg>
-        Chọn ảnh để gửi
+        Chọn một khoảnh khắc
       </label>
       <input type="file" id="photo-upload-input" accept="image/*" hidden>
+      <figure class="photo-upload-preview" id="photo-upload-preview" hidden>
+        <img id="photo-upload-preview-image" alt="Ảnh đã chọn để gửi">
+      </figure>
       <input type="text" id="photo-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
       <div id="photo-turnstile" class="turnstile-slot" hidden></div>
-      <p class="upload-hint" id="upload-hint">Mỗi lượt một ảnh · tự thu nhỏ và chuyển sang WebP trước khi gửi</p>
+      <p class="upload-hint" id="upload-hint" role="status" hidden></p>
     </div>
     <div class="marquee photo-marquee" id="photo-marquee">
       <div class="marquee-track" id="photo-track"></div>

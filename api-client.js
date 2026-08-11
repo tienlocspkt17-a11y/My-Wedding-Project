@@ -216,7 +216,11 @@
 
   async function mountTurnstile(containerId) {
     var container = document.getElementById(containerId);
-    if (!container || turnstileWidgets.has(containerId)) return;
+    if (!container) return;
+    if (turnstileWidgets.has(containerId)) {
+      container.hidden = false;
+      return turnstileWidgets.get(containerId);
+    }
     var config = await getConfig();
     if (!config.turnstileSiteKey) return;
     var turnstile = await loadTurnstileScript();
@@ -226,8 +230,18 @@
       sitekey: config.turnstileSiteKey,
       theme: document.body.classList.contains('dark-mode') ? 'dark' : 'light',
       size: 'flexible',
+      callback: function (token) {
+        container.dispatchEvent(new CustomEvent('wedding:turnstile-ready', { detail: { token: token } }));
+      },
+      'expired-callback': function () {
+        container.dispatchEvent(new CustomEvent('wedding:turnstile-expired'));
+      },
+      'error-callback': function () {
+        container.dispatchEvent(new CustomEvent('wedding:turnstile-error'));
+      },
     });
     turnstileWidgets.set(containerId, widgetId);
+    return widgetId;
   }
 
   function turnstileToken(containerId) {

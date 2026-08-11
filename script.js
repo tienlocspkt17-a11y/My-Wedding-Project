@@ -40,6 +40,31 @@ document.addEventListener('DOMContentLoaded', function () {
   var WEDDING_DATE = new Date('2026-10-20T17:30:00+07:00').getTime();
   var safariRendering = Boolean(window.storyIsSafari);
 
+  /* Dấu vết chẩn đoán: nếu WebContent bị iOS đóng, pagehide thường không kịp
+     chạy và lần mở kế tiếp vẫn thấy heartbeat ở trạng thái active. */
+  (function trackUnexpectedReload() {
+    var key = 'love-story-page-heartbeat';
+    var heartbeatTimer = 0;
+    try {
+      var previous = JSON.parse(sessionStorage.getItem(key) || 'null');
+      window.storyMemoryReloadSuspected = Boolean(
+        previous && previous.state === 'active' && Date.now() - previous.at < 120000 && previous.scrollY > window.innerHeight
+      );
+      if (window.storyMemoryReloadSuspected) {
+        console.warn('Safari có thể vừa khôi phục WebContent sau memory pressure.', previous);
+      }
+      var writeHeartbeat = function (state) {
+        sessionStorage.setItem(key, JSON.stringify({ state: state, at: Date.now(), scrollY: Math.round(window.scrollY) }));
+      };
+      writeHeartbeat('active');
+      heartbeatTimer = window.setInterval(function () { writeHeartbeat('active'); }, 5000);
+      window.addEventListener('pagehide', function () {
+        clearInterval(heartbeatTimer);
+        writeHeartbeat('closed');
+      }, { once: true });
+    } catch (_) {}
+  })();
+
   // Dữ liệu Góc nhìn kép (Dual Perspective)
   var actTexts = {
     'act-1': {
@@ -464,6 +489,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var isSparkleRunning = false;
   var sparkleInView = false;
   var sparkleFrame = 0;
+  var sparkleBufferReleased = false;
 
   function scheduleSparkles() {
     if (isSparkleRunning && sparkleInView && !document.hidden && !sparkleFrame) {
@@ -515,7 +541,17 @@ document.addEventListener('DOMContentLoaded', function () {
   var sparkleSection = document.getElementById('night-garden');
   if (sparkleSection && 'IntersectionObserver' in window) {
     new IntersectionObserver(function(entries) {
-      sparkleInView = entries.some(function(entry) { return entry.isIntersecting; });
+      var activeEntry = entries.find(function(entry) { return entry.isIntersecting; });
+      sparkleInView = Boolean(activeEntry);
+      if (sparkleInView && sparkleBufferReleased) {
+        sparkleWidth = sparkleCanvas.width = window.innerWidth;
+        sparkleHeight = sparkleCanvas.height = window.innerHeight;
+        sparkleBufferReleased = false;
+      } else if (!sparkleInView && window.storyUseMobileAssets && entries.some(function(entry) { return entry.boundingClientRect.bottom < 0; })) {
+        sparkleCanvas.width = 1;
+        sparkleCanvas.height = 1;
+        sparkleBufferReleased = true;
+      }
       scheduleSparkles();
     }, { rootMargin: '15% 0px' }).observe(sparkleSection);
   } else {
@@ -822,7 +858,7 @@ window.storyFrames.subscribe(function() {
       const incoming = flashLayers[nextLayer];
       const outgoing = flashLayers[activeFlashLayer];
       if (incoming) {
-        incoming.style.backgroundImage = `url('${rewindList[index].src}')`;
+        incoming.style.backgroundImage = `url('${window.storyImageSource(rewindList[index].src)}')`;
         incoming.classList.add('is-current');
       }
       if (outgoing) outgoing.classList.remove('is-current');
@@ -1461,7 +1497,7 @@ window.storyFrames.subscribe(function() {
     invisibleData.forEach(function (item) {
       var card = document.createElement('div');
       card.className = 'invisible-card spotlight-card glass-shine reveal';
-      card.innerHTML = `<img class="inv-image" src="${item.img}" alt="Kỷ niệm" loading="lazy" /><div class="spotlight-overlay"><span class="spotlight-text">🔦 Di chuột để khám phá</span></div><div class="inv-caption">${item.caption}</div>`;
+      card.innerHTML = `<img class="inv-image" src="${window.storyImageSource(item.img)}" alt="Kỷ niệm" loading="lazy" decoding="async" /><div class="spotlight-overlay"><span class="spotlight-text">🔦 Di chuột để khám phá</span></div><div class="inv-caption">${item.caption}</div>`;
       card.setAttribute('aria-pressed', 'false');
       enableKeyboardActivation(card, 'Mở ảnh ký ức: ' + item.caption);
       card.addEventListener('click', function () {
@@ -1540,7 +1576,7 @@ window.storyFrames.subscribe(function() {
     galleryImages.forEach(function (src, index) {
       var slide = document.createElement('div');
       slide.className = 'epilogue-album-slide';
-      slide.innerHTML = '<img src="' + src + '" alt="Ảnh cưới" loading="lazy" decoding="async" />';
+      slide.innerHTML = '<img src="' + window.storyImageSource(src) + '" alt="Ảnh cưới" loading="lazy" decoding="async" />';
       slide.addEventListener('click', function () { openLightbox(index); });
       galleryWrapper.appendChild(slide);
     });
@@ -1574,7 +1610,7 @@ window.storyFrames.subscribe(function() {
     if (!lightbox || !lightboxImg) return;
     triggerShutter(); // Kích hoạt màn trập khi mở
     currentIndex = index; 
-    lightboxImg.src = galleryImages[currentIndex] || '';
+    lightboxImg.src = window.storyImageSource(galleryImages[currentIndex] || '');
     lightbox.classList.add('open'); 
     lightbox.setAttribute('aria-hidden', 'false'); 
     document.body.style.overflow = 'hidden';
@@ -1585,20 +1621,24 @@ window.storyFrames.subscribe(function() {
     lightbox.classList.remove('open'); 
     lightbox.setAttribute('aria-hidden', 'true'); 
     document.body.style.overflow = '';
+    // Bỏ texture lightbox sau transition; mở lại sẽ nạp đúng ảnh hiện tại.
+    setTimeout(function () {
+      if (!lightbox.classList.contains('open') && lightboxImg) lightboxImg.removeAttribute('src');
+    }, 450);
   }
 
   function prevImage() {
     if (galleryImages.length === 0) return;
     triggerShutter(); // Kích hoạt màn trập khi vuốt trái
     currentIndex = (currentIndex - 1 + galleryImages.length) % galleryImages.length; 
-    lightboxImg.src = galleryImages[currentIndex];
+    lightboxImg.src = window.storyImageSource(galleryImages[currentIndex]);
   }
 
   function nextImage() {
     if (galleryImages.length === 0) return;
     triggerShutter(); // Kích hoạt màn trập khi vuốt phải
     currentIndex = (currentIndex + 1) % galleryImages.length; 
-    lightboxImg.src = galleryImages[currentIndex];
+    lightboxImg.src = window.storyImageSource(galleryImages[currentIndex]);
   }
 
   if (lightboxClose) lightboxClose.addEventListener('click', closeLightbox);
@@ -1615,9 +1655,9 @@ window.storyFrames.subscribe(function() {
 
   /* ---------- 23) LIVE PHOTO WALL ---------- */
   var photoTrack = document.getElementById('photo-track'), PHOTO_STORAGE_KEY = 'love-story-shared-photos',
-      MAX_STORED_PHOTOS = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 6 : 10,
+      MAX_STORED_PHOTOS = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 4 : 10,
       albumPhotos = typeof invisibleData !== 'undefined' ? invisibleData.slice(0, 6).map(function(item) { return item.img; }) : galleryImages.slice(0, 6);
-  function loadUploadedPhotos() { try { var raw = localStorage.getItem(PHOTO_STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; } }
+  function loadUploadedPhotos() { try { var raw = localStorage.getItem(PHOTO_STORAGE_KEY); var parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed.slice(0, MAX_STORED_PHOTOS) : []; } catch (e) { return []; } }
   function saveUploadedPhotos(list) { try { localStorage.setItem(PHOTO_STORAGE_KEY, JSON.stringify(list)); } catch (e) {} }
   var uploadedPhotos = loadUploadedPhotos();
 
@@ -1626,7 +1666,7 @@ window.storyFrames.subscribe(function() {
     var allSrcs = uploadedPhotos.concat(albumPhotos);
     allSrcs.concat(allSrcs).forEach(function (src) {
       var figure = document.createElement('figure'), img = document.createElement('img');
-      img.src = src; img.alt = 'Khoảnh khắc'; img.loading = 'lazy'; figure.appendChild(img); photoTrack.appendChild(figure);
+      img.src = window.storyImageSource(src); img.alt = 'Khoảnh khắc'; img.loading = 'lazy'; img.decoding = 'async'; figure.appendChild(img); photoTrack.appendChild(figure);
     });
   }
   renderPhotoMarquee();
@@ -2101,7 +2141,8 @@ window.storyFrames.subscribe(function() {
         if (!entry.isIntersecting) return;
         (backgroundGroups.get(entry.target) || []).forEach(function (element) {
           if (!element.dataset.bg) return;
-          element.style.backgroundImage = 'url("' + element.dataset.bg + '")';
+          element.dataset.memoryBg = element.dataset.bg;
+          element.style.backgroundImage = 'url("' + window.storyImageSource(element.dataset.bg) + '")';
           delete element.dataset.bg;
         });
         mediaObserver.unobserve(entry.target);
@@ -2115,9 +2156,62 @@ window.storyFrames.subscribe(function() {
       });
     }, { rootMargin: '75% 0px', threshold: 0 });
     document.querySelectorAll('.section-3d').forEach(function (section) { sectionObserver.observe(section); });
+
+    if (window.storyUseMobileAssets) {
+      var transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+      var memoryState = new WeakMap();
+
+      function restoreSectionMedia(section) {
+        section.querySelectorAll('source[data-memory-srcset]').forEach(function (source) {
+          source.setAttribute('srcset', source.dataset.memorySrcset);
+          delete source.dataset.memorySrcset;
+        });
+        section.querySelectorAll('img[data-memory-src]').forEach(function (image) {
+          image.setAttribute('src', image.dataset.memorySrc);
+          delete image.dataset.memorySrc;
+        });
+        section.querySelectorAll('[data-memory-bg]').forEach(function (element) {
+          element.style.backgroundImage = 'url("' + window.storyImageSource(element.dataset.memoryBg) + '")';
+        });
+      }
+
+      function releaseSectionMedia(section) {
+        section.querySelectorAll('source[srcset]').forEach(function (source) {
+          source.dataset.memorySrcset = source.getAttribute('srcset');
+          source.removeAttribute('srcset');
+        });
+        section.querySelectorAll('img[src]').forEach(function (image) {
+          if (image.src === transparentPixel) return;
+          image.dataset.memorySrc = image.getAttribute('src');
+          image.setAttribute('src', transparentPixel);
+        });
+        section.querySelectorAll('[data-memory-bg]').forEach(function (element) {
+          element.style.removeProperty('background-image');
+        });
+      }
+
+      var memoryObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          var state = memoryState.get(entry.target) || { activated: false, released: false };
+          if (entry.isIntersecting) {
+            state.activated = true;
+            if (state.released) restoreSectionMedia(entry.target);
+            state.released = false;
+          } else if (state.activated && !state.released && entry.boundingClientRect.bottom < -window.innerHeight * .5) {
+            releaseSectionMedia(entry.target);
+            state.released = true;
+          }
+          memoryState.set(entry.target, state);
+        });
+      }, { rootMargin: '120% 0px', threshold: 0 });
+
+      document.querySelectorAll('#act-2, #epilogue, .section-3d').forEach(function (section) {
+        memoryObserver.observe(section);
+      });
+    }
   } else {
     deferredBackgrounds.forEach(function (element) {
-      if (element.dataset.bg) element.style.backgroundImage = 'url("' + element.dataset.bg + '")';
+      if (element.dataset.bg) element.style.backgroundImage = 'url("' + window.storyImageSource(element.dataset.bg) + '")';
     });
   }
 
@@ -2127,7 +2221,7 @@ window.storyFrames.subscribe(function() {
     var load = function() {
       nightImages.forEach(function(image) {
         if (!image.dataset.bg) return;
-        image.style.backgroundImage = 'url("' + image.dataset.bg + '")';
+        image.style.backgroundImage = 'url("' + window.storyImageSource(image.dataset.bg) + '")';
         delete image.dataset.bg;
       });
     };
@@ -2730,6 +2824,12 @@ window.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => {
         scrollReleased = true;
         listeners.abort();
+        // Kính đã biến mất vĩnh viễn; thu toàn bộ backing store để Safari
+        // không giữ nhiều canvas full-screen đến cuối hành trình.
+        [canvas, maskCanvas, sampleCanvas, noiseCanvas].forEach(buffer => {
+          buffer.width = 1;
+          buffer.height = 1;
+        });
         window.dispatchEvent(new Event('act1:fog-cleared'));
         window.dispatchEvent(new Event('resize'));
       }, revealDelay);
@@ -2927,7 +3027,7 @@ window.addEventListener('DOMContentLoaded', () => {
     
     popupTitle.textContent = title;
     popupStory.textContent = story;
-    popupImg.src = image;
+    popupImg.src = window.storyImageSource(image);
     popupImg.alt = title;
     
     popup.classList.add('open');
@@ -2939,6 +3039,9 @@ window.addEventListener('DOMContentLoaded', () => {
     popup.classList.remove('open');
     popup.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
+    setTimeout(function () {
+      if (!popup.classList.contains('open')) popupImg.removeAttribute('src');
+    }, 450);
   }
 
   // Mở khóa ngôi sao và hiển thị popup

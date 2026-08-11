@@ -102,6 +102,19 @@ html:not(.gate-open) body { overflow: visible !important; height: auto !importan
   }
 }
 
+/* Ảnh mobile có 28% số pixel của bản 2K, giảm mạnh decoded bitmap memory. */
+@media (max-width: 820px), (pointer: coarse) {
+  html .story-page .night-bg-primary { background-image: url('images/mobile/anh_nen_1.jpg'); }
+  html .story-page .a1-placeholder-slider,
+  html .story-page .sa-cafe-reveal { background-image: url('images/mobile/anh_gap_go.jpg'); }
+  html .story-page .a1-bride-view .a1-view-image {
+    background-image: linear-gradient(90deg, rgba(7,15,22,.12), rgba(25,48,62,.35)), url('images/mobile/anh_gap_go_bride.jpg');
+  }
+  html .story-page .a1-groom-view .a1-view-image {
+    background-image: linear-gradient(90deg, rgba(65,36,16,.2), rgba(9,7,6,.18)), url('images/mobile/anh_gap_go_groom.jpg');
+  }
+}
+
 /* WebKit/Safari tạo thêm render pass cho backdrop-filter và nền fixed.
    Dùng lớp màu tương đương để giữ giao diện nhưng giảm compositing khi cuộn. */
 html.is-safari body.story-page {
@@ -335,6 +348,7 @@ img { max-width: 100%; display: block; }
 .night-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .night-bg-img { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 2.4s ease-in-out; z-index: 1; }
 .night-bg-img.active { opacity: 1; z-index: 2; }
+.night-bg-primary { background-image: url('images/anh_nen_1.jpg'); }
 
 
 /* ============================================================
@@ -3262,6 +3276,8 @@ body.grand-finale-active .red-thread-canvas {
 }
 
 .a2-memory-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; filter: saturate(.78) contrast(1.04); }
+.a2-memory-card picture,
+.epilogue-focus-frame picture { display: block; width: 100%; }
 .a2-memory-card figcaption {
   position: absolute;
   right: 15px;

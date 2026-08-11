@@ -64,6 +64,99 @@ html:not(.gate-open) body { overflow: visible !important; height: auto !importan
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
+/* Mobile/Safari performance: giữ chuyển động ở 60 Hz nhưng giảm các lớp phải
+   blur/composite lại trên từng frame và ngủ đông animation ngoài viewport. */
+@media (max-width: 760px), (pointer: coarse) {
+  body.story-page {
+    background-attachment: scroll;
+    background-size: 100% 100%;
+    animation: none;
+  }
+
+  .story-page .section-3d {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 900px;
+  }
+
+  .story-page .section-3d:not(.is-near-viewport) .marquee-track,
+  .story-page .section-3d:not(.is-near-viewport) .glow-dust,
+  .story-page .section-3d:not(.is-near-viewport) .night-scroll-hint {
+    animation-play-state: paused !important;
+  }
+
+  .story-page .a3-light-field i:nth-child(n + 9) { display: none; }
+
+  .story-page .music-toggle,
+  .story-page .theme-toggle,
+  .story-page .event-card,
+  .story-page .did-card,
+  .story-page .song-item,
+  .story-page .wish-card,
+  .story-page .memory-card,
+  .story-page .invisible-card,
+  .story-page .epilogue-couple-card,
+  .story-page .a1-view-copy,
+  .story-page .guestbook-tooltip {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* WebKit/Safari tạo thêm render pass cho backdrop-filter và nền fixed.
+   Dùng lớp màu tương đương để giữ giao diện nhưng giảm compositing khi cuộn. */
+html.is-safari body.story-page {
+  background-attachment: scroll;
+  background-size: 100% 100%;
+  animation: none;
+}
+
+html.is-safari .story-page .section-3d {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
+}
+
+html.is-safari .story-page .section-3d:not(.is-near-viewport) .marquee-track,
+html.is-safari .story-page .section-3d:not(.is-near-viewport) .glow-dust,
+html.is-safari .story-page .section-3d:not(.is-near-viewport) .night-scroll-hint {
+  animation-play-state: paused !important;
+}
+
+html.is-safari .story-page .section-3d:not(.is-near-viewport) [style*="will-change"],
+html.is-safari .story-page .section-3d:not(.is-near-viewport) .reveal,
+html.is-safari .story-page .section-3d:not(.is-near-viewport) .tilt-card {
+  will-change: auto !important;
+}
+
+html.is-safari .story-page .a3-light-field i:nth-child(n + 9) { display: none; }
+
+html.is-safari .story-page .dot-nav,
+html.is-safari .story-page .music-toggle,
+html.is-safari .story-page .theme-toggle,
+html.is-safari .story-page .a1-split-handle b,
+html.is-safari .story-page .a1-real-detail,
+html.is-safari .story-page .a1-view-copy,
+html.is-safari .story-page .event-card,
+html.is-safari .story-page .did-card,
+html.is-safari .story-page .song-item,
+html.is-safari .story-page .wish-card,
+html.is-safari .story-page .memory-card,
+html.is-safari .story-page .invisible-card,
+html.is-safari .story-page .epilogue-couple-card,
+html.is-safari .story-page .guestbook-tooltip {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.is-safari .story-page .sa-glass-haze,
+html.is-safari .story-page .sa-clear-streak {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.is-safari .story-page .sa-glass-haze {
+  background: rgba(190, 203, 207, .5);
+}
+
 body {
   position: relative; margin: 0; overflow-x: hidden;
   font-family: var(--font-body); color: var(--text-primary);

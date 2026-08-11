@@ -4,6 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>[Tên Cô Dâu] &amp; [Tên Chú Rể] — Save The Date</title>
+  <script>
+    // Gắn trước khi CSS tải để Safari nhận đúng pipeline nhẹ ngay từ frame đầu.
+    (function () {
+      var ua = navigator.userAgent;
+      var isSafari = /AppleWebKit/i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Chromium|Android)/i.test(ua);
+      window.storyIsSafari = isSafari;
+      if (isSafari) document.documentElement.classList.add('is-safari');
+    })();
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='.9em' font-size='56'%3E♥%3C/text%3E%3C/svg%3E">
 
   <!-- Google Fonts -->
@@ -667,14 +676,14 @@
       </div>
       <div class="epilogue-couple-grid">
         <article class="epilogue-couple-card epilogue-bride-card">
-          <div class="epilogue-couple-photo" style="background-image:url('images/anh_co_dau.jpg')"></div>
+          <div class="epilogue-couple-photo" data-bg="images/anh_co_dau.jpg"></div>
           <span>CÔ DÂU</span>
           <h3>[Tên Cô Dâu]</h3>
           <p>“[Một vài dòng ngắn về cô dâu — dữ liệu có thể thay sau.]”</p>
         </article>
         <div class="epilogue-couple-mark" aria-hidden="true">L <i>&amp;</i> B</div>
         <article class="epilogue-couple-card epilogue-groom-card">
-          <div class="epilogue-couple-photo" style="background-image:url('images/anh_chu_re.jpg')"></div>
+          <div class="epilogue-couple-photo" data-bg="images/anh_chu_re.jpg"></div>
           <span>CHÚ RỂ</span>
           <h3>[Tên Chú Rể]</h3>
           <p>“[Một vài dòng ngắn về chú rể — dữ liệu có thể thay sau.]”</p>
@@ -931,8 +940,8 @@
   <div class="container center">
     <div class="finale-frames-container">
       <!-- Hai ảnh kỷ niệm lướt từ hai bên vào -->
-      <div class="polaroid frame-left" style="background-image:url('images/anh_gia_dinh.jpg')"></div>
-      <div class="polaroid frame-right" style="background-image:url('images/anh_cuoi_chinh.jpg')"></div>
+      <div class="polaroid frame-left" data-bg="images/anh_gia_dinh.jpg"></div>
+      <div class="polaroid frame-right" data-bg="images/anh_cuoi_chinh.jpg"></div>
       
       <!-- Khung chính giữa (Rỗng) hiện thông điệp cảm xúc -->
       <div class="polaroid frame-center">
@@ -1072,8 +1081,10 @@ function runIntro() {
 
   // Phân bổ hạt và pixel ratio theo năng lực thiết bị để tránh quá tải GPU.
   const limitedHardware = (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
-  const PARTICLE_COUNT = isLowPowerDevice || limitedHardware ? 2200 : 5200;
-  const MAX_PIXEL_RATIO = isLowPowerDevice || limitedHardware ? 1.25 : 1.75;
+  // Giữ RAF 60 Hz, giảm lượng vertex/pixel mỗi frame trên GPU mobile/Safari.
+  const safariRendering = Boolean(window.storyIsSafari);
+  const PARTICLE_COUNT = isLowPowerDevice || limitedHardware ? 1600 : (safariRendering ? 3400 : 4600);
+  const MAX_PIXEL_RATIO = isLowPowerDevice || limitedHardware ? 1 : (safariRendering ? 1.25 : 1.6);
   const TUNNEL_LENGTH = 80;
   const RADIUS = 8.5;
 

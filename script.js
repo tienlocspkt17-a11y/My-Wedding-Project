@@ -4,6 +4,33 @@
    Đã gộp: Dual Perspective, Red Thread, Focus Gallery, Probability Chart, Rewind Time Machine
    ========================================================= */
 
+/* Một nguồn scroll/resize duy nhất: mọi scene cùng nhận một nhịp RAF, tránh
+   Safari phải chạy nhiều handler và đo layout lặp lại trong cùng một frame. */
+window.storyFrames = window.storyFrames || (function () {
+  var subscribers = new Set();
+  var frame = 0;
+
+  function flush() {
+    frame = 0;
+    subscribers.forEach(function (callback) { callback(); });
+  }
+
+  function request() {
+    if (!frame) frame = requestAnimationFrame(flush);
+  }
+
+  window.addEventListener('scroll', request, { passive: true });
+  window.addEventListener('resize', request, { passive: true });
+  return {
+    subscribe: function (callback) {
+      subscribers.add(callback);
+      request();
+      return function () { subscribers.delete(callback); };
+    },
+    request: request
+  };
+})();
+
 document.addEventListener('DOMContentLoaded', function () {
 
   /* ---------- CẤU HÌNH CHUNG ---------- */
@@ -11,6 +38,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var WEDDING_LOCATION = 'Trung tâm Tiệc cưới ABC';
   var LOVE_STORY_VIDEO_ID = 'dQw4w9WgXcQ';
   var WEDDING_DATE = new Date('2026-10-20T17:30:00+07:00').getTime();
+  var safariRendering = Boolean(window.storyIsSafari);
 
   // Dữ liệu Góc nhìn kép (Dual Perspective)
   var actTexts = {
@@ -137,7 +165,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var ctx = canvas.getContext('2d', { alpha: true });
     var width, height;
     var petals = [];
-    var totalPetals = 200;
+    var petalColors = ['#D8A79C', '#EDEFE5', '#F3ECE0', '#D8C9A3', '#C08D82'];
+    var compactMotion = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+    var totalPetals = compactMotion ? 72 : (safariRendering ? 90 : 120);
+    var petalFrame = 0;
+    var petalsRunning = false;
 
     var mouse = { x: -1000, y: -1000, vx: 0, vy: 0, active: false };
     var lastMouse = { x: -1000, y: -1000 };
@@ -151,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function () {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    window.addEventListener('scroll', function() {
+    window.storyFrames.subscribe(function() {
       var currentScrollY = window.scrollY;
       if (currentScrollY > lastScrollY + 2) scrollDir = 1;
       else if (currentScrollY < lastScrollY - 2) scrollDir = -1;
@@ -188,8 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
       this.rotation = Math.random() * Math.PI * 2;
       this.rotSpeed = -0.04 + Math.random() * 0.08;
       
-      this.baseColor = ['#D8A79C', '#EDEFE5', '#F3ECE0', '#D8C9A3', '#C08D82'][Math.floor(Math.random() * 5)];
-      this.opacity = 0.6 + Math.random() * 0.4;
+      this.colorIndex = Math.floor(Math.random() * petalColors.length);
       
       this.wobble = Math.random() * 100;
       this.wobbleSpeed = 0.01 + Math.random() * 0.02;
@@ -228,40 +259,50 @@ document.addEventListener('DOMContentLoaded', function () {
       this.y += this.vy;
     };
 
-    PetalPhysics.prototype.draw = function () {
-      ctx.save();
-      ctx.translate(this.x, this.y);
-      ctx.rotate(this.rotation);
-      
-      ctx.fillStyle = this.baseColor;
-      ctx.globalAlpha = this.opacity;
-
-      ctx.beginPath();
-      // Giữ nguyên dáng cánh mảnh của thiết kế ban đầu.
-      ctx.ellipse(0, 0, this.currentSize * 0.55, this.currentSize * 0.25, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    };
-
     for (var i = 0; i < totalPetals; i++) {
       petals.push(new PetalPhysics(i));
     }
 
     function animatePetals() {
-      // Tạm dừng phép tính khi tab bị ẩn để giảm CPU/pin, không đổi hình dáng cánh hoa.
-      if (document.hidden) {
-        requestAnimationFrame(animatePetals);
-        return;
-      }
+      petalFrame = 0;
+      if (!petalsRunning || document.hidden) return;
       ctx.clearRect(0, 0, width, height);
 
-      for (var i = 0; i < petals.length; i++) {
-        petals[i].update();
-        petals[i].draw();
+      for (var i = 0; i < petals.length; i++) petals[i].update();
+
+      // Batch theo 5 màu: từ 72 lần fill/save/rotate xuống còn 5 lần fill mỗi frame.
+      ctx.globalAlpha = 0.78;
+      for (var colorIndex = 0; colorIndex < petalColors.length; colorIndex++) {
+        ctx.beginPath();
+        for (var j = 0; j < petals.length; j++) {
+          var petal = petals[j];
+          if (petal.colorIndex !== colorIndex) continue;
+          // ellipse() nối từ điểm cuối trước đó nếu path đã có subpath; moveTo
+          // ngăn các cánh bị fill thành những tam giác lớn nối xuyên màn hình.
+          ctx.moveTo(petal.x, petal.y);
+          ctx.ellipse(petal.x, petal.y, petal.currentSize * 0.55, petal.currentSize * 0.25, petal.rotation, 0, Math.PI * 2);
+        }
+        ctx.fillStyle = petalColors[colorIndex];
+        ctx.fill();
       }
-      requestAnimationFrame(animatePetals);
+      ctx.globalAlpha = 1;
+      petalFrame = requestAnimationFrame(animatePetals);
     }
-    animatePetals();
+
+    function schedulePetals() {
+      if (petalsRunning && !document.hidden && !petalFrame) {
+        petalFrame = requestAnimationFrame(animatePetals);
+      }
+    }
+
+    function startPetals() {
+      petalsRunning = true;
+      schedulePetals();
+    }
+
+    window.addEventListener('wedding:intro-stop', startPetals, { once: true });
+    document.addEventListener('visibilitychange', schedulePetals);
+    if (window.isGateOpened) startPetals();
   }
 
   /* ---------- 5) PARTICLE INTRO & MUSIC AUTO-PLAY ---------- */
@@ -333,6 +374,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Yêu cầu module Three.js ngừng render sau khi overlay đã đóng.
     window.dispatchEvent(new Event('wedding:intro-stop'));
+    window.storyFrames.request();
   };
 
   // Báo cho module particle biết gate controller đã sẵn sàng.
@@ -436,7 +478,8 @@ document.addEventListener('DOMContentLoaded', function () {
     sparkleHeight = sparkleCanvas.height = window.innerHeight;
     sparkles.length = 0;
 
-    for (var i = 0; i < 80; i++) {
+    var sparkleCount = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 48 : (safariRendering ? 58 : 72);
+    for (var i = 0; i < sparkleCount; i++) {
       sparkles.push({
         x: Math.random() * sparkleWidth, y: Math.random() * sparkleHeight,
         size: 1 + Math.random() * 3, speedX: (Math.random() - 0.5) * 0.3, speedY: (Math.random() - 0.5) * 0.3,
@@ -589,11 +632,11 @@ function clearRedThread() {
 }
 
 // Lắng nghe sự kiện scroll để vẽ sợi chỉ với rewindProgress = 0 (mặc định)
-window.addEventListener('scroll', function() {
+var act0ThreadSection = document.getElementById('super-act');
+window.storyFrames.subscribe(function() {
   if (!window.isGateOpened) return;
-  var act0Section = document.getElementById('super-act');
-  if (act0Section) {
-    var act0Rect = act0Section.getBoundingClientRect();
+  if (act0ThreadSection) {
+    var act0Rect = act0ThreadSection.getBoundingClientRect();
     if (act0Rect.top < window.innerHeight && act0Rect.bottom > 0) {
       if (!window.isRewindActive) clearRedThread();
       return;
@@ -873,6 +916,8 @@ window.addEventListener('scroll', function() {
       if (!isRewound) return;
 
       const sectionRect = saSection.getBoundingClientRect();
+      const isNearAct0 = sectionRect.top < window.innerHeight * 1.5 && sectionRect.bottom > -window.innerHeight;
+      if (!isNearAct0) return;
       const travel = Math.max(1, sectionRect.height - window.innerHeight);
       const progress = clamp(-sectionRect.top / travel);
       const alternateOpacity = envelope(progress, 0, .035, .18, .27);
@@ -893,7 +938,7 @@ window.addEventListener('scroll', function() {
       const presentOpacity = 1 - segment(progress, 0, .04);
       saPresent.style.opacity = presentOpacity.toFixed(3);
       saPresent.style.transform = `translate3d(0, ${(-24 * segment(progress, 0, .06)).toFixed(1)}px, 0)`;
-      saPresent.style.filter = `blur(${(8 * (1 - presentOpacity)).toFixed(2)}px)`;
+      saPresent.style.filter = `blur(${((safariRendering ? 4 : 8) * (1 - presentOpacity)).toFixed(2)}px)`;
 
       setScene(saAlternate, alternateOpacity, 20 * (1 - alternateOpacity), 1);
       setScene(saParallel, parallelOpacity, 16 * (1 - parallelOpacity), .985 + parallelOpacity * .015);
@@ -905,7 +950,7 @@ window.addEventListener('scroll', function() {
         const lineProgress = segment(progress, .006 + index * .03, .055 + index * .035) * alternateOpacity;
         line.style.opacity = lineProgress.toFixed(3);
         line.style.transform = `translateY(${((1 - lineProgress) * 22).toFixed(1)}px)`;
-        line.style.filter = `blur(${((1 - lineProgress) * 5).toFixed(1)}px)`;
+        line.style.filter = `blur(${((1 - lineProgress) * (safariRendering ? 2.5 : 5)).toFixed(1)}px)`;
       });
       silhouettes.forEach((silhouette, index) => {
         const travelPercent = 8 + alternateProgress * 84;
@@ -1016,8 +1061,7 @@ window.addEventListener('scroll', function() {
     }, { threshold: 0.15 });
 
     saObserver.observe(saSection);
-    window.addEventListener('scroll', scheduleAct0Render, { passive: true });
-    document.addEventListener('scroll', scheduleAct0Render, { capture: true, passive: true });
+    window.storyFrames.subscribe(scheduleAct0Render);
     window.addEventListener('resize', function () {
       ensureExpandedAct0Height();
       scheduleAct0Render();
@@ -1026,7 +1070,7 @@ window.addEventListener('scroll', function() {
     const act1Shell = document.getElementById('act-1');
     if (act1Shell && 'IntersectionObserver' in window) {
       const act1Observer = new IntersectionObserver(entries => {
-        if (entries.some(entry => entry.isIntersecting)) {
+        if (document.body.classList.contains('act0-rewound') && entries.some(entry => entry.isIntersecting)) {
           if (typeof window.initFogCanvas === 'function') window.initFogCanvas();
           act1Observer.disconnect();
         }
@@ -1099,10 +1143,12 @@ window.addEventListener('scroll', function() {
       if (!document.body.classList.contains('act0-rewound')) return;
 
       const rect = act1Section.getBoundingClientRect();
+      const shouldRenderAct1 = rect.top < window.innerHeight * 1.5 && rect.bottom > -window.innerHeight;
       const travel = Math.max(1, rect.height - window.innerHeight);
       const progress = a1Clamp(-rect.top / travel);
       const isNearAct1 = rect.top < window.innerHeight * 1.15 && rect.bottom > 0;
       document.body.classList.toggle('act1-active', isNearAct1);
+      if (!shouldRenderAct1) return;
 
       if (isNearAct1) revealAct2Flow();
       if (isNearAct1 && typeof window.initFogCanvas === 'function') window.initFogCanvas();
@@ -1150,9 +1196,7 @@ window.addEventListener('scroll', function() {
       act1FogCleared = true;
       scheduleAct1Render();
     });
-    window.addEventListener('scroll', scheduleAct1Render, { passive: true });
-    document.addEventListener('scroll', scheduleAct1Render, { capture: true, passive: true });
-    window.addEventListener('resize', scheduleAct1Render, { passive: true });
+    window.storyFrames.subscribe(scheduleAct1Render);
   }
 
   /* ---------- MANUAL FOCUS GALLERY LOGIC ---------- */
@@ -1162,14 +1206,17 @@ window.addEventListener('scroll', function() {
   var focusHint = document.getElementById('focus-hint');
   var epilogueSection = document.getElementById('epilogue');
   var proposalAnswer = document.getElementById('proposal-answer');
+  var lastFocusRender = -1;
 
   window.setEpilogueFocus = function(value, fromManualInput) {
     var focusValue = Math.max(0, Math.min(100, Number(value) || 0));
+    if (!fromManualInput && Math.abs(focusValue - lastFocusRender) < 0.3) return;
+    lastFocusRender = focusValue;
     var ratio = focusValue / 100;
     if (focusSlider && !fromManualInput) focusSlider.value = String(Math.round(focusValue));
     if (epilogueSection) epilogueSection.style.setProperty('--epi-focus-value', ratio.toFixed(4));
     if (focusImg) {
-      focusImg.style.filter = 'blur(' + ((1 - ratio) * 20).toFixed(2) + 'px)';
+      focusImg.style.filter = 'blur(' + ((1 - ratio) * (safariRendering ? 12 : 20)).toFixed(2) + 'px)';
       focusImg.style.transform = 'scale(' + (1.06 - ratio * .06).toFixed(4) + ')';
     }
     if (proposalAnswer) {
@@ -1567,7 +1614,8 @@ window.addEventListener('scroll', function() {
   });
 
   /* ---------- 23) LIVE PHOTO WALL ---------- */
-  var photoTrack = document.getElementById('photo-track'), PHOTO_STORAGE_KEY = 'love-story-shared-photos', MAX_STORED_PHOTOS = 12,
+  var photoTrack = document.getElementById('photo-track'), PHOTO_STORAGE_KEY = 'love-story-shared-photos',
+      MAX_STORED_PHOTOS = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 6 : 10,
       albumPhotos = typeof invisibleData !== 'undefined' ? invisibleData.slice(0, 6).map(function(item) { return item.img; }) : galleryImages.slice(0, 6);
   function loadUploadedPhotos() { try { var raw = localStorage.getItem(PHOTO_STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; } }
   function saveUploadedPhotos(list) { try { localStorage.setItem(PHOTO_STORAGE_KEY, JSON.stringify(list)); } catch (e) {} }
@@ -1584,14 +1632,30 @@ window.addEventListener('scroll', function() {
   renderPhotoMarquee();
 
   var uploadInput = document.getElementById('photo-upload-input'), uploadHint = document.getElementById('upload-hint');
+  function preparePhoto(file) {
+    return new Promise(function (resolve) {
+      if (!file || !file.type.startsWith('image/')) return resolve(null);
+      var image = new Image();
+      var objectUrl = URL.createObjectURL(file);
+      image.onload = function () {
+        var maxEdge = 1280;
+        var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+        var output = document.createElement('canvas');
+        output.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        output.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        output.getContext('2d', { alpha: false }).drawImage(image, 0, 0, output.width, output.height);
+        URL.revokeObjectURL(objectUrl);
+        // Thu nhỏ trước khi lưu giúp Safari không phải giữ nhiều ảnh full-resolution trong RAM.
+        resolve(output.toDataURL('image/jpeg', 0.82));
+      };
+      image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
+      image.src = objectUrl;
+    });
+  }
   if (uploadInput) {
     uploadInput.addEventListener('change', function () {
       var files = Array.prototype.slice.call(uploadInput.files || []); if (!files.length) return;
-      var readPromises = files.map(function (file) {
-        return new Promise(function (resolve) {
-          var reader = new FileReader(); reader.onload = function () { resolve(reader.result); }; reader.onerror = function () { resolve(null); }; reader.readAsDataURL(file);
-        });
-      });
+      var readPromises = files.map(preparePhoto);
       Promise.all(readPromises).then(function (results) {
         var validResults = results.filter(Boolean);
         uploadedPhotos = validResults.concat(uploadedPhotos).slice(0, MAX_STORED_PHOTOS); saveUploadedPhotos(uploadedPhotos); renderPhotoMarquee();
@@ -1671,7 +1735,8 @@ window.addEventListener('scroll', function() {
     gbW = gbCanvas.width = gbCanvas.parentElement.clientWidth;
     gbH = gbCanvas.height = gbCanvas.parentElement.clientHeight;
     
-    nodes = currentWishes.map(function(w, index) {
+    var visibleWishLimit = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 28 : 40;
+    nodes = currentWishes.slice(-visibleWishLimit).map(function(w, index) {
       return {
         x: 24 + Math.random() * Math.max(1, gbW - 48), y: 34 + Math.random() * Math.max(1, gbH - 68),
         vx: (Math.random() - 0.5) * 0.34, vy: (Math.random() - 0.5) * 0.28,
@@ -1936,8 +2001,9 @@ window.addEventListener('scroll', function() {
   /* ---------- 31) SCROLL PROGRESS ---------- */
   var progress = document.getElementById('scroll-progress');
   if (progress) {
-    window.addEventListener('scroll', function () {
-      var percent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+    window.storyFrames.subscribe(function () {
+      var scrollRange = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      var percent = (window.scrollY / scrollRange) * 100;
       progress.style.width = percent + '%';
     });
   }
@@ -2021,6 +2087,40 @@ window.addEventListener('scroll', function() {
     card.addEventListener('mouseleave', function () { card.style.transform = 'rotateX(0deg) rotateY(0deg) scale(1)'; });
   });
 
+  /* ---------- MEDIA PREWARM + OFFSCREEN LIFECYCLE ---------- */
+  var deferredBackgrounds = document.querySelectorAll('[data-bg]:not(.night-bg-img)');
+  if ('IntersectionObserver' in window) {
+    var backgroundGroups = new Map();
+    deferredBackgrounds.forEach(function (element) {
+      var anchor = element.closest('section') || element;
+      if (!backgroundGroups.has(anchor)) backgroundGroups.set(anchor, []);
+      backgroundGroups.get(anchor).push(element);
+    });
+    var mediaObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        (backgroundGroups.get(entry.target) || []).forEach(function (element) {
+          if (!element.dataset.bg) return;
+          element.style.backgroundImage = 'url("' + element.dataset.bg + '")';
+          delete element.dataset.bg;
+        });
+        mediaObserver.unobserve(entry.target);
+      });
+    }, { rootMargin: '125% 0px', threshold: 0.01 });
+    backgroundGroups.forEach(function (_, anchor) { mediaObserver.observe(anchor); });
+
+    var sectionObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        entry.target.classList.toggle('is-near-viewport', entry.isIntersecting);
+      });
+    }, { rootMargin: '75% 0px', threshold: 0 });
+    document.querySelectorAll('.section-3d').forEach(function (section) { sectionObserver.observe(section); });
+  } else {
+    deferredBackgrounds.forEach(function (element) {
+      if (element.dataset.bg) element.style.backgroundImage = 'url("' + element.dataset.bg + '")';
+    });
+  }
+
   /* ---------- SLIDESHOW ẢNH NỀN NIGHT GARDEN ---------- */
   var nightImages = document.querySelectorAll('.night-bg-img');
   function loadDeferredNightBackgrounds() {
@@ -2053,7 +2153,9 @@ if (optCanvas) {
   var oCtx = optCanvas.getContext('2d', { alpha: true });
   var oWidth, oHeight;
   var lights = [];
-  var totalLights = 24;
+  var compactOptics = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+  var safariOptics = Boolean(window.storyIsSafari);
+  var totalLights = compactOptics ? 14 : (safariOptics ? 16 : 20);
   var currentZone = 1; // Bắt buộc khởi đầu ở Zone 1 (Mới quen)
   var opticsFrame = 0;
 
@@ -2097,7 +2199,7 @@ LightNode.prototype.update = function (zone) {
 
     if (zone === 3) {
       this.history.push({ x: this.x, y: this.y });
-      if (this.history.length > 11) this.history.shift();
+      if (this.history.length > (compactOptics ? 7 : (safariOptics ? 8 : 10))) this.history.shift();
     }
 
     // VẬT LÝ & TÂM LÝ
@@ -2272,7 +2374,7 @@ LightNode.prototype.draw = function (zone) {
     }
   }
 
-  window.addEventListener('scroll', updateOpticsZone, { passive: true });
+  window.storyFrames.subscribe(updateOpticsZone);
   document.addEventListener('visibilitychange', scheduleOptics);
 
   // Gọi thử hàm scroll 1 lần lúc vừa load xong web để set trạng thái ban đầu
@@ -2412,7 +2514,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const unlockRatio = 0.30;
 
     function buildFogDetails() {
-      wisps = Array.from({ length: 12 }, (_, i) => ({
+      const compactFog = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches;
+      const safariFog = Boolean(window.storyIsSafari);
+      wisps = Array.from({ length: compactFog ? 7 : (safariFog ? 8 : 10) }, (_, i) => ({
         x: (0.08 + ((i * 0.137) % 0.86)) * fogWidth,
         y: (0.08 + ((i * 0.219) % 0.84)) * fogHeight,
         radius: (0.18 + (i % 3) * 0.055) * Math.max(fogWidth, fogHeight),
@@ -2421,7 +2525,7 @@ window.addEventListener('DOMContentLoaded', () => {
         alpha: 0.16 + (i % 3) * 0.045
       }));
 
-      droplets = Array.from({ length: 54 }, (_, i) => ({
+      droplets = Array.from({ length: compactFog ? 32 : (safariFog ? 40 : 48) }, (_, i) => ({
         x: ((i * 47) % 101) / 101 * fogWidth,
         y: ((i * 71) % 103) / 103 * fogHeight,
         r: (1.2 + (i % 5) * 0.75) * pixelRatio,
@@ -2454,7 +2558,8 @@ window.addEventListener('DOMContentLoaded', () => {
         oldMask.getContext('2d').drawImage(maskCanvas, 0, 0);
       }
 
-      const ratioLimit = window.innerWidth <= 680 ? 1.5 : 2;
+      const compactFog = window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches;
+      const ratioLimit = compactFog ? 1 : (window.storyIsSafari ? 1.25 : 1.75);
       pixelRatio = Math.min(window.devicePixelRatio || 1, ratioLimit);
       fogWidth = Math.max(1, Math.round(rect.width * pixelRatio));
       fogHeight = Math.max(1, Math.round(rect.height * pixelRatio));
@@ -2532,7 +2637,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     function animateFog(now) {
       if (isUnlocked) return;
-      if (now - lastRenderAt > 32) {
+      if (now - lastRenderAt > 15) {
         renderFog(now);
         lastRenderAt = now;
       }
@@ -2958,16 +3063,16 @@ window.addEventListener('DOMContentLoaded', () => {
     const fadeOut = 1 - segment(value, outStart, outEnd);
     return clamp(Math.min(fadeIn, fadeOut));
   };
-  const scrollProgress = section => {
+  const scrollProgress = (section, knownRect) => {
     if (!section) return 0;
-    const rect = section.getBoundingClientRect();
+    const rect = knownRect || section.getBoundingClientRect();
     const travel = Math.max(1, rect.height - window.innerHeight);
     return clamp(-rect.top / travel);
   };
 
-  function renderAct2() {
+  function renderAct2(knownRect) {
     if (!act2) return;
-    const progress = scrollProgress(act2);
+    const progress = scrollProgress(act2, knownRect);
     const gather = segment(progress, .09, .27);
     const titleOpacity = envelope(progress, 0, .045, .23, .34);
     const memoryOpacity = envelope(progress, .07, .15, .28, .39);
@@ -2991,9 +3096,9 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function renderAct3() {
+  function renderAct3(knownRect) {
     if (!act3) return;
-    const progress = scrollProgress(act3);
+    const progress = scrollProgress(act3, knownRect);
     const headingOpacity = envelope(progress, 0, .045, .2, .3);
     const unpromiseOpacity = envelope(progress, .12, .2, .34, .43);
     const pagesOpacity = envelope(progress, .29, .37, .57, .65);
@@ -3046,16 +3151,16 @@ window.addEventListener('DOMContentLoaded', () => {
     act3.querySelector('.sign-bride')?.classList.toggle('draw', signaturesActive && progress >= .89);
     act3.classList.toggle('transition-to-focus', cueActive);
 
-    const rect = act3.getBoundingClientRect();
+    const rect = knownRect || act3.getBoundingClientRect();
     const isNearAct3 = rect.top < window.innerHeight && rect.bottom > 0;
     window.isTimeFrozen = false;
     window.act3StreakDirection = progress >= .91 ? 1 : -1;
     window.isStarTrailsActive = isNearAct3;
   }
 
-  function renderEpilogue() {
+  function renderEpilogue(knownRect) {
     if (!epilogue) return;
-    const progress = scrollProgress(epilogue);
+    const progress = scrollProgress(epilogue, knownRect);
     const focusOpacity = envelope(progress, 0, .075, .27, .36);
     const focusValue = segment(progress, .045, .235);
     const ringOpacity = envelope(progress, .23, .3, .36, .44);
@@ -3106,9 +3211,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (progressText) progressText.textContent = `${Math.round(progress * 100)}%`;
   }
 
-  function renderFinale() {
+  function renderFinale(knownRect) {
     if (!finale) return;
-    const rect = finale.getBoundingClientRect();
+    const rect = knownRect || finale.getBoundingClientRect();
     const progress = clamp((window.innerHeight - rect.top) / (window.innerHeight * 1.25));
     const thresholds = [.06, .22, .39, .57];
     thresholds.forEach((threshold, index) => {
@@ -3120,25 +3225,27 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function renderNarrative() {
     narrativeFrame = 0;
-    renderAct2();
-    renderAct3();
-    renderEpilogue();
-    renderFinale();
-    const occupiesViewport = section => {
-      if (!section) return false;
-      const rect = section.getBoundingClientRect();
-      return rect.top < window.innerHeight && rect.bottom > 0;
-    };
-    document.body.classList.toggle('narrative-petals-hidden', occupiesViewport(act2) || occupiesViewport(act3) || occupiesViewport(epilogue));
+    const viewportHeight = window.innerHeight;
+    const act2Rect = act2?.getBoundingClientRect();
+    const act3Rect = act3?.getBoundingClientRect();
+    const epilogueRect = epilogue?.getBoundingClientRect();
+    const finaleRect = finale?.getBoundingClientRect();
+    const isNear = rect => rect && rect.top < viewportHeight * 2 && rect.bottom > -viewportHeight;
+    const occupiesViewport = rect => rect && rect.top < viewportHeight && rect.bottom > 0;
+
+    // Chỉ ghi style cho scene đang tới gần; section xa không còn chiếm main thread.
+    if (isNear(act2Rect)) renderAct2(act2Rect);
+    if (isNear(act3Rect)) renderAct3(act3Rect);
+    if (isNear(epilogueRect)) renderEpilogue(epilogueRect);
+    renderFinale(finaleRect);
+    document.body.classList.toggle('narrative-petals-hidden', occupiesViewport(act2Rect) || occupiesViewport(act3Rect) || occupiesViewport(epilogueRect));
   }
 
   function scheduleNarrativeRender() {
     if (!narrativeFrame) narrativeFrame = requestAnimationFrame(renderNarrative);
   }
 
-  window.addEventListener('scroll', scheduleNarrativeRender, { passive: true });
-  document.addEventListener('scroll', scheduleNarrativeRender, { capture: true, passive: true });
-  window.addEventListener('resize', scheduleNarrativeRender, { passive: true });
+  window.storyFrames.subscribe(scheduleNarrativeRender);
   renderNarrative();
 
   if (reduceMotion) {

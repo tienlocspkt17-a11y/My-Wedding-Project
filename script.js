@@ -335,6 +335,10 @@ document.addEventListener('DOMContentLoaded', function () {
     window.dispatchEvent(new Event('wedding:intro-stop'));
   };
 
+  // Báo cho module particle biết gate controller đã sẵn sàng.
+  // Tránh kẹt overlay nếu nhánh Reduce Motion/WebGL gọi bỏ qua trước DOMContentLoaded.
+  window.dispatchEvent(new Event('wedding:gate-ready'));
+
   /* ---------- OPENING GATE FAILSAFE ---------- */
   var openingOverlay = document.getElementById('overlay-3d');
   var openingSkipBtn = document.getElementById('skip-btn');

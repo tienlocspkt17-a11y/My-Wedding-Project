@@ -1038,10 +1038,19 @@ const overlay = document.getElementById('overlay-3d');
 const container = document.getElementById('canvas-container');
 const hint = document.getElementById('hint-text');
 const skipBtn = document.getElementById('skip-btn');
+let introStopRequested = false;
+
+window.addEventListener('wedding:intro-stop', () => {
+  introStopRequested = true;
+}, { once: true });
 
 function skipIntro() {
+  if (typeof window.revealWeddingSite !== 'function') {
+    window.addEventListener('wedding:gate-ready', skipIntro, { once: true });
+    return;
+  }
   if(window.playBackgroundMusic) window.playBackgroundMusic();
-  if(window.revealWeddingSite) window.revealWeddingSite();
+  window.revealWeddingSite();
 }
 
 if (!hasWebGL() || prefersReducedMotion) {
@@ -1052,7 +1061,7 @@ if (!hasWebGL() || prefersReducedMotion) {
     document.fonts.ready,
     new Promise(resolve => setTimeout(resolve, 1200))
   ]).then(() => {
-    runIntro();
+    if (!introStopRequested && !window.isGateOpened) runIntro();
   });
 }
 
@@ -1336,25 +1345,36 @@ function runIntro() {
 
   let rafId = null;
   let revealed = false;
+  let disposed = false;
+
+  function disposeIntro() {
+    if (disposed) return;
+    disposed = true;
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    window.removeEventListener('resize', onResize);
+    geometry.dispose();
+    material.dispose();
+    renderer.dispose();
+    if (renderer.domElement.isConnected) renderer.domElement.remove();
+  }
+
+  window.addEventListener('wedding:intro-stop', () => {
+    // Giữ canvas trong lúc overlay crossfade rồi mới giải phóng GPU.
+    setTimeout(disposeIntro, 1500);
+  }, { once: true });
 
   function triggerSiteReveal() {
     if (revealed) return;
     revealed = true;
     if(window.revealWeddingSite) window.revealWeddingSite();
-    
-    // Sau crossfade, giải phóng toàn bộ GPU resource của intro thay vì chỉ dừng RAF.
-    setTimeout(() => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', onResize);
-      geometry.dispose();
-      material.dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
-    }, 1500);
+
+    // Fallback cleanup nếu gate controller chưa kịp phát sự kiện dừng.
+    setTimeout(disposeIntro, 1500);
   }
 
   function animate(now) {
-    rafId = requestAnimationFrame(animate);e
+    if (disposed) return;
+    rafId = requestAnimationFrame(animate);
 
     if (isFlying) {
       flightElapsed = flightClock.getElapsedTime();

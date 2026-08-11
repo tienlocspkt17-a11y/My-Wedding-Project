@@ -122,7 +122,7 @@ Frontend sẽ tự tải widget khi API trả về site key. Không cấu hình 
 
 ## 5. Tạo thiệp riêng cho khách từ Google Sheets
 
-Tạo một tab `Guests` trong cùng spreadsheet. Dòng đầu cần đúng thứ tự:
+Worker tự tạo tab `Guests` nếu chưa có. Nếu tạo thủ công, dòng đầu cần đúng thứ tự:
 
 ```text
 guest_id | name | group | delivery | slug | invite_url | status | created_at | updated_at

@@ -1,6 +1,6 @@
 import { ApiError } from './http.js';
 import { getGuest, upsertGuest } from './firestore.js';
-import { readSheetRange, updateSheetRows } from './sheets.js';
+import { ensureSheetTab, readSheetRange, updateSheetRows } from './sheets.js';
 import { cleanSingleLine, normalizeSlug } from './validation.js';
 import {
   GUEST_SHEET_HEADERS,
@@ -54,6 +54,7 @@ function normalizedTimestamp(value, fallback) {
 export async function syncGuestsFromSheet(env) {
   if (!env.GOOGLE_SHEETS_ID) return { skipped: true, reason: 'sheets_not_configured' };
   const { range, sheet } = guestRangeConfig(env);
+  await ensureSheetTab(env, sheet);
   const rows = await readSheetRange(env, range);
   if (!rows.length) {
     await updateSheetRows(env, [{ range: `${sheet}!A1:I1`, values: GUEST_SHEET_HEADERS }]);

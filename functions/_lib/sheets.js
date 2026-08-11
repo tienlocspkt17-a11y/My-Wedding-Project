@@ -42,6 +42,37 @@ export async function readSheetRange(env, range) {
   return Array.isArray(payload.values) ? payload.values : [];
 }
 
+export async function ensureSheetTab(env, title) {
+  if (!env.GOOGLE_SHEETS_ID) return false;
+  const token = await getGoogleAccessToken(env, [SHEETS_SCOPE]);
+  const spreadsheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SHEETS_ID)}`;
+  const metadataResponse = await fetch(`${spreadsheetUrl}?fields=sheets.properties.title`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!metadataResponse.ok) {
+    const detail = await metadataResponse.text();
+    throw new Error(`Sheets metadata failed (${metadataResponse.status}): ${detail.slice(0, 300)}`);
+  }
+  const metadata = await metadataResponse.json();
+  if ((metadata.sheets || []).some(sheet => sheet.properties?.title === title)) return false;
+
+  const createResponse = await fetch(`${spreadsheetUrl}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
+  });
+  if (!createResponse.ok) {
+    const detail = await createResponse.text();
+    // Hai lượt đồng bộ đồng thời có thể cùng nhìn thấy tab chưa tồn tại.
+    if (createResponse.status === 400 && /already exists/i.test(detail)) return false;
+    throw new Error(`Sheets tab creation failed (${createResponse.status}): ${detail.slice(0, 300)}`);
+  }
+  return true;
+}
+
 export async function updateSheetRows(env, updates) {
   if (!env.GOOGLE_SHEETS_ID || !updates.length) return false;
   const token = await getGoogleAccessToken(env, [SHEETS_SCOPE]);

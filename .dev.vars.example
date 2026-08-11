@@ -1,0 +1,18 @@
+# Sao chép file này thành .dev.vars để chạy local. Không commit .dev.vars.
+FIREBASE_PROJECT_ID="my-wedding-project-11aec"
+GOOGLE_SERVICE_ACCOUNT_EMAIL="firebase-adminsdk-xxxxx@my-wedding-project-11aec.iam.gserviceaccount.com"
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Chia sẻ Google Sheet cho GOOGLE_SERVICE_ACCOUNT_EMAIL với quyền Editor.
+GOOGLE_SHEETS_ID=""
+
+# Không bắt buộc. Chỉ cấu hình cả hai khóa cùng lúc khi bật Turnstile.
+TURNSTILE_SITE_KEY=""
+TURNSTILE_SECRET_KEY=""
+
+# Dùng để bảo vệ endpoint retry backup thủ công.
+BACKUP_CRON_SECRET="replace-with-a-long-random-secret"
+ADMIN_API_SECRET="replace-with-a-different-long-random-secret"
+
+# Dùng khi tạo khóa rate-limit trong KV; nên là chuỗi ngẫu nhiên.
+RATE_LIMIT_SALT="replace-with-another-long-random-secret"

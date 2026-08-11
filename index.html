@@ -898,6 +898,8 @@
           <label for="song-reason">Lý do chọn</label>
           <textarea id="song-reason" rows="2" placeholder="Vì sao bạn thích bài hát này?"></textarea>
         </div>
+        <input type="text" id="song-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
+        <div id="song-turnstile" class="turnstile-slot" hidden></div>
         <button type="submit" class="btn solid magnetic-btn">Gửi gợi ý</button>
       </form>
       <div class="suggested-songs">
@@ -922,13 +924,15 @@
         </svg>
         Chọn ảnh để gửi
       </label>
-      <input type="file" id="photo-upload-input" accept="image/*" multiple hidden>
-      <p class="upload-hint" id="upload-hint">Có thể chọn nhiều ảnh cùng lúc (JPG, PNG)</p>
+      <input type="file" id="photo-upload-input" accept="image/*" hidden>
+      <input type="text" id="photo-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
+      <div id="photo-turnstile" class="turnstile-slot" hidden></div>
+      <p class="upload-hint" id="upload-hint">Mỗi lượt một ảnh · JPG, PNG hoặc WebP</p>
     </div>
     <div class="marquee photo-marquee" id="photo-marquee">
       <div class="marquee-track" id="photo-track"></div>
     </div>
-    <p class="livewall-note">* Ảnh hiện chỉ hiển thị trên trình duyệt của bạn (chưa có máy chủ).</p>
+    <p class="livewall-note">Ảnh được gửi riêng đến chúng mình và xuất hiện trên dòng ký ức sau khi được duyệt.</p>
   </div>
 </section>
 
@@ -988,14 +992,19 @@
           <p>Mỗi lời chúc sẽ thắp sáng thêm một quả bóng trong bầu trời phía dưới.</p>
         </div>
         <form class="rsvp-form" id="wish-form">
+          <div class="field wish-form-trap" aria-hidden="true">
+            <label for="guest-website">Website</label>
+            <input type="text" id="guest-website" name="website" tabindex="-1" autocomplete="off">
+          </div>
           <div class="field">
             <label for="guest-name">Họ tên của bạn</label>
-            <input type="text" id="guest-name" placeholder="Nguyễn Văn A" required>
+            <input type="text" id="guest-name" placeholder="Nguyễn Văn A" minlength="2" maxlength="80" autocomplete="name" required>
           </div>
           <div class="field">
             <label for="guest-message">Lời chúc</label>
-            <textarea id="guest-message" rows="5" placeholder="Gửi một lời chúc cho hành trình phía trước..." required></textarea>
+            <textarea id="guest-message" rows="5" placeholder="Gửi một lời chúc cho hành trình phía trước..." minlength="5" maxlength="600" required></textarea>
           </div>
+          <div class="wish-turnstile" id="wish-turnstile" hidden></div>
           <button type="submit" class="btn solid magnetic-btn" id="wish-submit">Gửi Lời Chúc</button>
           <p class="rsvp-note" id="rsvp-note"></p>
         </form>
@@ -1491,39 +1500,8 @@ function runIntro() {
 }
 </script>
 
-<script>
-  // Firebase chỉ tải khi một tính năng backend thực sự yêu cầu; tránh giữ
-  // Firestore + Storage trong heap suốt phần cinematic của love story.
-  window.loadFirebaseServices = function () {
-    if (window.firebaseServicesPromise) return window.firebaseServicesPromise;
-    window.firebaseServicesPromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js'),
-      import('https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js')
-    ]).then(function (modules) {
-      var appApi = modules[0], firestoreApi = modules[1], storageApi = modules[2];
-      var app = appApi.initializeApp({
-        apiKey: 'AIzaSyBVejGgYnZenxBjC11mQ1dbMMogbfm1fVs',
-        authDomain: 'my-wedding-project-11aec.firebaseapp.com',
-        projectId: 'my-wedding-project-11aec',
-        storageBucket: 'my-wedding-project-11aec.firebasestorage.app',
-        messagingSenderId: '727647386545',
-        appId: '1:727647386545:web:8ac2847cf6885937dd5b90',
-        measurementId: 'G-TY0NL6QPJT'
-      });
-      return {
-        app: app,
-        db: firestoreApi.getFirestore(app),
-        storage: storageApi.getStorage(app),
-        firestore: firestoreApi,
-        storageApi: storageApi
-      };
-    });
-    return window.firebaseServicesPromise;
-  };
-</script>
-
 <!-- Kết nối script chính của template -->
+<script src="api-client.js"></script>
 <script src="script.js"></script>
 
 <!-- Âm thanh gõ phím -->

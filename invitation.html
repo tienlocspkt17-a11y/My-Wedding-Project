@@ -164,7 +164,7 @@
 
   <div class="invite-opening-copy">
     <p class="invite-kicker">Một tấm thiệp gửi đến</p>
-    <p class="invite-recipient" id="invite-opening-title">Quý khách</p>
+    <p class="invite-recipient" id="invite-opening-title" data-invite-recipient>Quý khách</p>
     <p class="invite-opening-date">20 · 10 · 2026</p>
     <button class="invite-open-button" id="invite-open-button" type="button">
       <span>Mở thiệp</span>
@@ -243,9 +243,10 @@
         </h1>
         <div class="invite-ornament" aria-hidden="true"><span></span><b>◆</b><span></span></div>
         <p class="invite-formal-copy">
-          Sự hiện diện của Quý khách là niềm vinh hạnh<br>
+          Sự hiện diện của <span id="invite-formal-recipient">Quý khách</span> là niềm vinh hạnh<br>
           và là món quà quý giá trong ngày vui của gia đình chúng tôi.
         </p>
+        <p class="invite-personal-message" id="invite-personal-message" hidden></p>
         <time class="invite-main-date" datetime="2026-10-20">
           <span>THỨ BA</span>
           <strong>20</strong>
@@ -412,6 +413,33 @@
     </div>
   </section>
 
+  <!-- WEDDING DAY MODE · chỉ mở trong khung giờ cấu hình và trên thiệp cá nhân -->
+  <section class="invite-section invite-livewall" id="invite-livewall" hidden>
+    <div class="invite-container">
+      <header class="invite-section-heading invite-reveal">
+        <p class="invite-eyebrow">Wedding Day · Live Photo</p>
+        <h2>Gửi một khoảnh khắc bạn vừa thấy</h2>
+        <p>Những bức ảnh rất thật trong ngày hôm nay sẽ cùng nhau tạo thành một album chỉ có thể xuất hiện nhờ những người đang ở đây.</p>
+      </header>
+      <div class="invite-livewall-panel invite-reveal">
+        <label class="invite-live-upload" for="invite-live-photo-input">
+          <span aria-hidden="true">＋</span>
+          <strong>Chọn một ảnh</strong>
+          <small>Ảnh sẽ được nén trước khi gửi</small>
+        </label>
+        <input type="file" id="invite-live-photo-input" accept="image/*" hidden>
+        <label class="invite-live-caption" for="invite-live-caption">
+          <span>Một dòng cho khoảnh khắc này</span>
+          <input id="invite-live-caption" type="text" maxlength="300" placeholder="Ví dụ: Khoảnh khắc cả hai cùng cười…">
+        </label>
+        <input type="text" id="invite-live-website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
+        <div id="invite-live-turnstile" class="turnstile-slot" hidden></div>
+        <p class="invite-live-status" id="invite-live-status" role="status">Mỗi lượt một ảnh · tối đa 2,5 MB sau khi nén.</p>
+      </div>
+      <div class="invite-live-grid" id="invite-live-grid" aria-live="polite"></div>
+    </div>
+  </section>
+
   <!-- 06 · KHOẢNG NGHỈ CẢM XÚC -->
   <section class="invite-photo-break invite-reveal" aria-label="Lời nhắn từ cô dâu và chú rể">
     <div class="invite-photo-wrap">
@@ -522,36 +550,7 @@
   </div>
 </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-  import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-storage.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyBVejGgYnZenxBjC11mQ1dbMMogbfm1fVs",
-    authDomain: "my-wedding-project-11aec.firebaseapp.com",
-    projectId: "my-wedding-project-11aec",
-    storageBucket: "my-wedding-project-11aec.firebasestorage.app",
-    messagingSenderId: "727647386545",
-    appId: "1:727647386545:web:8ac2847cf6885937dd5b90",
-    measurementId: "G-TY0NL6QPJT"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  window.firebaseDB = getFirestore(app);
-  window.firebaseStorage = getStorage(app);
-  window.fbCollection = collection;
-  window.fbAddDoc = addDoc;
-  window.fbServerTimestamp = serverTimestamp;
-  window.fbOnSnapshot = onSnapshot;
-  window.fbQuery = query;
-  window.fbOrderBy = orderBy;
-  window.fbGetDocs = getDocs;
-  window.fbRef = ref;
-  window.fbUploadBytes = uploadBytes;
-  window.fbGetDownloadURL = getDownloadURL;
-</script>
-
+<script src="api-client.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     var body = document.body;
@@ -565,7 +564,122 @@
     var music = document.getElementById('invite-music');
     var themeMeta = document.querySelector('meta[name="theme-color"]');
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var inviteGuestName = '';
     if (!reduceMotion) body.classList.add('invite-hero-staged');
+
+    function applyInvitationGuest(payload) {
+      var guest = payload && payload.guest;
+      if (!guest || !guest.displayName) return;
+      var openingRecipient = document.getElementById('invite-opening-title');
+      var formalRecipient = document.getElementById('invite-formal-recipient');
+      var personalMessage = document.getElementById('invite-personal-message');
+      if (openingRecipient) openingRecipient.textContent = guest.displayName;
+      if (formalRecipient) formalRecipient.textContent = guest.salutation || guest.displayName;
+      if (personalMessage && guest.personalMessage) {
+        personalMessage.textContent = guest.personalMessage;
+        personalMessage.hidden = false;
+      }
+      document.title = 'Thiệp mời dành cho ' + guest.displayName + ' · L & B';
+      body.dataset.invitationSlug = payload.slug || '';
+      inviteGuestName = guest.displayName;
+    }
+
+    var inviteBootstrap = document.getElementById('invite-bootstrap');
+    if (inviteBootstrap) {
+      try { applyInvitationGuest(JSON.parse(inviteBootstrap.textContent || '{}')); } catch (_) {}
+    } else if (window.WeddingAPI) {
+      var invitationSlug = window.WeddingAPI.invitationSlug();
+      if (invitationSlug) window.WeddingAPI.getInvitation(invitationSlug).then(applyInvitationGuest).catch(function () {});
+    }
+
+    function prepareInviteLivePhoto(file) {
+      return new Promise(function (resolve) {
+        if (!file || !file.type.startsWith('image/')) return resolve(null);
+        var image = new Image();
+        var objectUrl = URL.createObjectURL(file);
+        image.onload = function () {
+          var scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          canvas.getContext('2d', { alpha: false }).drawImage(image, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(objectUrl);
+          image.removeAttribute('src');
+          canvas.toBlob(function (blob) {
+            canvas.width = 1;
+            canvas.height = 1;
+            resolve(blob && blob.size <= 2500000 ? blob : null);
+          }, 'image/jpeg', .8);
+        };
+        image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
+        image.src = objectUrl;
+      });
+    }
+
+    function addInviteLivePhoto(grid, photo, prepend) {
+      if (!grid || !photo?.url) return;
+      var figure = document.createElement('figure');
+      var image = document.createElement('img');
+      var caption = document.createElement('figcaption');
+      image.src = photo.url;
+      image.alt = photo.caption || 'Khoảnh khắc trong ngày cưới';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      caption.textContent = photo.caption || (photo.senderName ? 'Từ ' + photo.senderName : 'Một khoảnh khắc vừa được gửi');
+      figure.append(image, caption);
+      if (prepend) grid.prepend(figure); else grid.appendChild(figure);
+    }
+
+    function initWeddingDayMode(slug) {
+      if (!window.WeddingAPI || !slug) return;
+      var section = document.getElementById('invite-livewall');
+      var input = document.getElementById('invite-live-photo-input');
+      var captionInput = document.getElementById('invite-live-caption');
+      var status = document.getElementById('invite-live-status');
+      var grid = document.getElementById('invite-live-grid');
+      window.WeddingAPI.getConfig().then(function (config) {
+        if (!config?.weddingDay?.active) return;
+        section.hidden = false;
+        window.WeddingAPI.mountTurnstile('invite-live-turnstile').catch(function () {});
+        window.WeddingAPI.listPhotos('wedding-day', 24).then(function (response) {
+          (response.items || []).reverse().forEach(function (photo) { addInviteLivePhoto(grid, photo, true); });
+        }).catch(function () {});
+        input.addEventListener('change', async function () {
+          var file = input.files?.[0];
+          input.value = '';
+          if (!file) return;
+          var liveToken = window.WeddingAPI.turnstileToken('invite-live-turnstile');
+          var liveTurnstile = document.getElementById('invite-live-turnstile');
+          if (liveTurnstile && !liveTurnstile.hidden && !liveToken) {
+            status.textContent = 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi chọn lại ảnh.';
+            return;
+          }
+          status.textContent = 'Đang chuẩn bị ảnh…';
+          var blob = await prepareInviteLivePhoto(file);
+          if (!blob) { status.textContent = 'Ảnh quá lớn hoặc không đúng định dạng. Vui lòng chọn ảnh khác.'; return; }
+          status.textContent = 'Đang gửi khoảnh khắc của bạn…';
+          try {
+            var response = await window.WeddingAPI.submitPhoto({
+              context: 'wedding-day',
+              senderName: inviteGuestName,
+              caption: captionInput.value.trim(),
+              guestSlug: slug,
+              website: document.getElementById('invite-live-website')?.value || '',
+              turnstileToken: liveToken
+            }, blob);
+            addInviteLivePhoto(grid, response.photo, true);
+            captionInput.value = '';
+            status.textContent = 'Ảnh đã xuất hiện trong album của ngày hôm nay. Cảm ơn bạn!';
+          } catch (error) {
+            status.textContent = error.message || 'Chưa thể gửi ảnh. Vui lòng thử lại.';
+          } finally {
+            window.WeddingAPI.resetTurnstile('invite-live-turnstile');
+          }
+        });
+      }).catch(function () {});
+    }
+
+    if (window.WeddingAPI) initWeddingDayMode(window.WeddingAPI.invitationSlug());
 
     // Parallax có quán tính nhỏ: tạo chiều sâu trước khi mở nhưng không đuổi con trỏ quá mạnh.
     var parallaxTargetX = 0;

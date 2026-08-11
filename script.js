@@ -1634,18 +1634,60 @@ window.storyFrames.subscribe(function() {
     }
     suggestedSongs.forEach(function (song) {
       var span = document.createElement('span'); span.className = 'suggested-song-item';
-      span.innerHTML = `<strong>${song.name}</strong> - ${song.artist} <span class="suggested-by">(gợi ý bởi ${song.by || 'bạn'})</span>`;
+      var title = document.createElement('strong');
+      var by = document.createElement('span');
+      title.textContent = song.name;
+      by.className = 'suggested-by';
+      by.textContent = song.pending ? '(đã nhận · chờ duyệt)' : '(đã được chúng mình chọn)';
+      span.append(title, document.createTextNode(' - ' + song.artist + ' '), by);
       suggestedList.appendChild(span);
     });
   }
 
   if (suggestionForm) {
-    suggestionForm.addEventListener('submit', function (e) {
+    if (window.WeddingAPI) {
+      window.WeddingAPI.mountTurnstile('song-turnstile').catch(function () {});
+      window.WeddingAPI.listSongSuggestions(12).then(function (response) {
+        suggestedSongs = (response.items || []).map(function (song) {
+          return { id: song.id, name: song.title, artist: song.artist, reason: song.reason || '', pending: false };
+        });
+        renderSuggestedSongs();
+      }).catch(function () {});
+    }
+    suggestionForm.addEventListener('submit', async function (e) {
       e.preventDefault();
       var name = document.getElementById('song-name').value.trim(), artist = document.getElementById('song-artist').value.trim(), reason = document.getElementById('song-reason').value.trim();
       if (!name || !artist) { showToast('⚠️', 'Vui lòng nhập tên bài hát và nghệ sĩ.'); return; }
-      suggestedSongs.push({ name: name, artist: artist, by: 'bạn', reason: reason });
-      renderSuggestedSongs(); showToast('🎵', 'Cảm ơn bạn! Bài hát "' + name + '" đã được thêm vào danh sách gợi ý.'); suggestionForm.reset();
+      if (!window.WeddingAPI) { showToast('⚠️', 'Dịch vụ gợi ý bài hát chưa sẵn sàng.'); return; }
+      var songToken = window.WeddingAPI.turnstileToken('song-turnstile');
+      var songTurnstile = document.getElementById('song-turnstile');
+      if (songTurnstile && !songTurnstile.hidden && !songToken) {
+        showToast('⚠️', 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi gửi lại.');
+        return;
+      }
+      var submitButton = suggestionForm.querySelector('button[type="submit"]');
+      var originalLabel = submitButton ? submitButton.textContent : '';
+      if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Đang gửi…'; }
+      try {
+        var response = await window.WeddingAPI.submitSongSuggestion({
+          title: name,
+          artist: artist,
+          reason: reason,
+          website: document.getElementById('song-website')?.value || '',
+          guestSlug: window.WeddingAPI.invitationSlug(),
+          turnstileToken: songToken
+        });
+        suggestedSongs.unshift({ id: response.suggestion.id, name: name, artist: artist, reason: reason, pending: true });
+        suggestedSongs = suggestedSongs.slice(0, 12);
+        renderSuggestedSongs();
+        showToast('🎵', 'Cảm ơn bạn! Gợi ý đã được lưu và đang chờ chúng mình duyệt.');
+        suggestionForm.reset();
+      } catch (error) {
+        showToast('⚠️', error.message || 'Chưa thể gửi gợi ý lúc này.');
+      } finally {
+        if (submitButton) { submitButton.disabled = false; submitButton.textContent = originalLabel; }
+        window.WeddingAPI.resetTurnstile('song-turnstile');
+      }
     });
   }
   renderSuggestedSongs();
@@ -1837,35 +1879,48 @@ window.storyFrames.subscribe(function() {
   });
 
   /* ---------- 23) LIVE PHOTO WALL ---------- */
-  var photoTrack = document.getElementById('photo-track'), PHOTO_STORAGE_KEY = 'love-story-shared-photos',
+  var photoTrack = document.getElementById('photo-track'),
       MAX_STORED_PHOTOS = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 4 : 10,
       albumPhotos = typeof invisibleData !== 'undefined' ? invisibleData.slice(0, 6).map(function(item) { return item.img; }) : galleryImages.slice(0, 6);
-  function loadUploadedPhotos() { try { var raw = localStorage.getItem(PHOTO_STORAGE_KEY); var parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed.slice(0, MAX_STORED_PHOTOS) : []; } catch (e) { return []; } }
-  function saveUploadedPhotos(list) { try { localStorage.setItem(PHOTO_STORAGE_KEY, JSON.stringify(list)); } catch (e) {} }
-  var uploadedPhotos = null;
+  var uploadedPhotos = [];
+  var remotePhotosLoaded = false;
   var photoWallInitialized = false;
 
   function renderPhotoMarquee() {
     if (!photoTrack) return; photoTrack.innerHTML = '';
-    if (!uploadedPhotos) uploadedPhotos = loadUploadedPhotos();
     var allSrcs = uploadedPhotos.concat(albumPhotos);
-    allSrcs.concat(allSrcs).forEach(function (src) {
+    allSrcs.concat(allSrcs).forEach(function (item) {
       var figure = document.createElement('figure'), img = document.createElement('img');
-      img.src = window.storyImageSource(src); img.alt = 'Khoảnh khắc'; img.loading = 'lazy'; img.decoding = 'async'; figure.appendChild(img); photoTrack.appendChild(figure);
+      var src = typeof item === 'string' ? window.storyImageSource(item) : item.src;
+      img.src = src; img.alt = typeof item === 'string' ? 'Khoảnh khắc' : (item.caption || 'Khoảnh khắc từ bạn bè'); img.loading = 'lazy'; img.decoding = 'async'; figure.appendChild(img); photoTrack.appendChild(figure);
     });
+  }
+
+  function loadRemotePhotos() {
+    if (remotePhotosLoaded || !window.WeddingAPI) return;
+    remotePhotosLoaded = true;
+    window.WeddingAPI.listPhotos('story', MAX_STORED_PHOTOS).then(function (response) {
+      var localItems = uploadedPhotos.filter(function (item) { return item.local; });
+      var remoteItems = (response.items || []).map(function (item) { return { id: item.id, src: item.url, caption: item.caption || '', local: false }; });
+      uploadedPhotos = localItems.concat(remoteItems).slice(0, MAX_STORED_PHOTOS);
+      if (photoWallInitialized) renderPhotoMarquee();
+    }).catch(function () { remotePhotosLoaded = false; });
   }
 
   function initPhotoWall() {
     if (photoWallInitialized) return;
     photoWallInitialized = true;
-    uploadedPhotos = loadUploadedPhotos();
     renderPhotoMarquee();
+    loadRemotePhotos();
   }
 
   function releasePhotoWall() {
     if (!photoWallInitialized || !photoTrack) return;
     photoTrack.replaceChildren();
-    uploadedPhotos = null;
+    uploadedPhotos = uploadedPhotos.filter(function (item) {
+      if (item.local && item.src) URL.revokeObjectURL(item.src);
+      return !item.local;
+    });
     photoWallInitialized = false;
   }
   window.storyReleasePhotoWall = releasePhotoWall;
@@ -1905,10 +1960,7 @@ window.storyFrames.subscribe(function() {
           output.width = 1;
           output.height = 1;
           if (!blob) return resolve(null);
-          var reader = new FileReader();
-          reader.onload = function () { resolve(reader.result); };
-          reader.onerror = function () { resolve(null); };
-          reader.readAsDataURL(blob);
+          resolve(blob);
         }, 'image/jpeg', 0.8);
       };
       image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
@@ -1916,18 +1968,53 @@ window.storyFrames.subscribe(function() {
     });
   }
   if (uploadInput) {
+    if (window.WeddingAPI) window.WeddingAPI.mountTurnstile('photo-turnstile').catch(function () {});
     uploadInput.addEventListener('change', function () {
-      var files = Array.prototype.slice.call(uploadInput.files || []); if (!files.length) return;
+      var files = Array.prototype.slice.call(uploadInput.files || []).slice(0, 1); if (!files.length) return;
       initPhotoWall();
-      // Xử lý tuần tự: nhiều ảnh camera 12MP không còn decode đồng thời.
+      if (!window.WeddingAPI) { if (uploadHint) uploadHint.textContent = 'Kho ảnh chưa sẵn sàng. Vui lòng thử lại sau.'; return; }
+      var photoToken = window.WeddingAPI.turnstileToken('photo-turnstile');
+      var photoTurnstile = document.getElementById('photo-turnstile');
+      if (photoTurnstile && !photoTurnstile.hidden && !photoToken) {
+        if (uploadHint) uploadHint.textContent = 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi chọn lại ảnh.';
+        uploadInput.value = '';
+        return;
+      }
+      if (uploadHint) { uploadHint.textContent = 'Đang chuẩn bị và gửi ảnh…'; uploadHint.style.color = 'var(--text-muted)'; }
+      var uploadedCount = 0;
+      var failedCount = 0;
+      // Xử lý và upload tuần tự: ảnh camera lớn không còn decode đồng thời trên mobile.
       files.reduce(function (promise, file) {
-        return promise.then(function (results) {
-          return preparePhoto(file).then(function (result) { if (result) results.push(result); return results; });
+        return promise.then(function () {
+          return preparePhoto(file).then(async function (blob) {
+            if (!blob) { failedCount += 1; return; }
+            var preview = { src: URL.createObjectURL(blob), caption: 'Ảnh đang chờ duyệt', local: true };
+            uploadedPhotos.unshift(preview);
+            uploadedPhotos = uploadedPhotos.slice(0, MAX_STORED_PHOTOS);
+            renderPhotoMarquee();
+            try {
+              await window.WeddingAPI.submitPhoto({
+                context: 'story',
+                website: document.getElementById('photo-website')?.value || '',
+                guestSlug: window.WeddingAPI.invitationSlug(),
+                turnstileToken: photoToken
+              }, blob);
+              uploadedCount += 1;
+            } catch (error) {
+              failedCount += 1;
+              URL.revokeObjectURL(preview.src);
+              uploadedPhotos = uploadedPhotos.filter(function (item) { return item !== preview; });
+              renderPhotoMarquee();
+            }
+          });
         });
-      }, Promise.resolve([])).then(function (results) {
-        var validResults = results.filter(Boolean);
-        uploadedPhotos = validResults.concat(uploadedPhotos).slice(0, MAX_STORED_PHOTOS); saveUploadedPhotos(uploadedPhotos); renderPhotoMarquee();
-        if (uploadHint) { uploadHint.textContent = 'Đã gửi ' + validResults.length + ' ảnh — cảm ơn bạn!'; uploadHint.style.color = '#5B6B4F'; }
+      }, Promise.resolve()).then(function () {
+        if (uploadHint) {
+          uploadHint.textContent = uploadedCount ? 'Đã nhận ' + uploadedCount + ' ảnh · ảnh sẽ xuất hiện sau khi được duyệt.' : 'Chưa thể gửi ảnh. Vui lòng thử lại sau.';
+          uploadHint.style.color = uploadedCount ? '#5B6B4F' : '#C08D82';
+          if (failedCount && uploadedCount) uploadHint.textContent += ' ' + failedCount + ' ảnh chưa gửi được.';
+        }
+        window.WeddingAPI.resetTurnstile('photo-turnstile');
       });
       uploadInput.value = '';
     });
@@ -1974,6 +2061,7 @@ window.storyFrames.subscribe(function() {
   // Chỉ đọc storage khi Guestbook sắp xuất hiện; trang đầu không cần giữ dữ
   // liệu lời chúc và node vật lý trong heap suốt toàn bộ love story.
   var currentWishes = null;
+  var guestbookRemoteRequested = false;
 
   var gbCanvas = document.getElementById('guestbook-canvas');
   var gbCtx = null;
@@ -1992,6 +2080,65 @@ window.storyFrames.subscribe(function() {
     ['#b9cbd1', '#637c83'],
     ['#e0b6bd', '#915c69']
   ];
+
+  function wishIdentity(wish) {
+    if (wish && wish.id) return 'id:' + wish.id;
+    return 'copy:' + String(wish?.name || '').toLowerCase() + '|' + String(wish?.text || '').toLowerCase();
+  }
+
+  function mergeWishCollections() {
+    var merged = [], seen = new Set();
+    Array.prototype.slice.call(arguments).forEach(function(collection) {
+      (Array.isArray(collection) ? collection : []).forEach(function(wish) {
+        if (!wish || typeof wish.name !== 'string' || typeof wish.text !== 'string') return;
+        var key = wishIdentity(wish);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(wish);
+      });
+    });
+    return merged.slice(-100);
+  }
+
+  function createGuestbookNode(wish, index) {
+    return {
+      x: 24 + Math.random() * Math.max(1, gbW - 48),
+      y: 34 + Math.random() * Math.max(1, gbH - 68),
+      vx: (Math.random() - 0.5) * 0.34,
+      vy: (Math.random() - 0.5) * 0.28,
+      baseRadius: 8 + Math.random() * 4,
+      wish: wish,
+      palette: balloonPalette[index % balloonPalette.length]
+    };
+  }
+
+  function mergeRemoteWishes(items) {
+    if (!currentWishes) currentWishes = loadWishes();
+    currentWishes = mergeWishCollections(currentWishes, items);
+    saveWishes(currentWishes);
+    if (!gbInitialized) return;
+    var existing = new Set(nodes.map(function(node) { return wishIdentity(node.wish); }));
+    var visibleWishLimit = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 28 : 40;
+    currentWishes.slice(-visibleWishLimit).forEach(function(wish, index) {
+      if (!existing.has(wishIdentity(wish))) nodes.push(createGuestbookNode(wish, nodes.length + index));
+    });
+    if (nodes.length > visibleWishLimit) nodes = nodes.slice(-visibleWishLimit);
+  }
+
+  function requestGuestbookWishes() {
+    if (guestbookRemoteRequested || !window.WeddingAPI) return;
+    guestbookRemoteRequested = true;
+    window.WeddingAPI.flushWishOutbox()
+      .catch(function () { return []; })
+      .then(function(synced) {
+        if (synced.length) mergeRemoteWishes(synced);
+        return window.WeddingAPI.listWishes(40);
+      })
+      .then(function(response) { mergeRemoteWishes(response.items || []); })
+      .catch(function() {
+        // Giữ cache local và dữ liệu mẫu nếu API đang tạm thời không khả dụng.
+      });
+  }
   
   // Biến kiểm soát 3 trạng thái
   var autoNode = null;        // Trạng thái 4: Hạt đang tự động thở
@@ -2009,6 +2156,7 @@ window.storyFrames.subscribe(function() {
   function initGuestbookNetwork() {
     if(!gbCanvas) return;
     if (!currentWishes) currentWishes = loadWishes();
+    requestGuestbookWishes();
     if (!gbCtx) gbCtx = gbCanvas.getContext('2d');
     if (gbInitialized) {
       resizeGuestbookCanvas();
@@ -2018,14 +2166,7 @@ window.storyFrames.subscribe(function() {
     gbH = gbCanvas.height = gbCanvas.parentElement.clientHeight;
     
     var visibleWishLimit = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches ? 28 : 40;
-    nodes = currentWishes.slice(-visibleWishLimit).map(function(w, index) {
-      return {
-        x: 24 + Math.random() * Math.max(1, gbW - 48), y: 34 + Math.random() * Math.max(1, gbH - 68),
-        vx: (Math.random() - 0.5) * 0.34, vy: (Math.random() - 0.5) * 0.28,
-        baseRadius: 8 + Math.random() * 4, wish: w,
-        palette: balloonPalette[index % balloonPalette.length]
-      };
-    });
+    nodes = currentWishes.slice(-visibleWishLimit).map(createGuestbookNode);
     gbInitialized = true;
     startAutoBreathing();
   }
@@ -2206,10 +2347,19 @@ window.storyFrames.subscribe(function() {
   }
   
   // TRẠNG THÁI 1: SHOOTING STAR (Thêm lời chúc mới)
-  function addWishToWall(name, text) {
-    var newWish = { name: name, text: text };
+  function addWishToWall(wish) {
+    var newWish = {
+      id: wish.id || '',
+      name: wish.name,
+      text: wish.text,
+      createdAt: wish.createdAt || new Date().toISOString()
+    };
     if (!currentWishes) currentWishes = loadWishes();
-    currentWishes.push(newWish); saveWishes(currentWishes); 
+    if (!currentWishes.some(function(item) { return wishIdentity(item) === wishIdentity(newWish); })) {
+      currentWishes.push(newWish);
+      currentWishes = currentWishes.slice(-100);
+      saveWishes(currentWishes);
+    }
     
     if(gbCanvas) {
       if (!gbInitialized) initGuestbookNetwork();
@@ -2237,16 +2387,72 @@ window.storyFrames.subscribe(function() {
   /* ---------- 26) FORM GỬI LỜI CHÚC ---------- */
   var form = document.getElementById('wish-form'), note = document.getElementById('rsvp-note'), submitBtn = document.getElementById('wish-submit');
   if (form) {
-    form.addEventListener('submit', function (e) {
+    if (window.WeddingAPI) window.WeddingAPI.mountTurnstile('wish-turnstile').catch(function () {});
+    form.addEventListener('submit', async function (e) {
       e.preventDefault();
       var name = document.getElementById('guest-name').value.trim(), messageVal = document.getElementById('guest-message').value.trim();
       if (!name || !messageVal) { note.textContent = 'Vui lòng điền đầy đủ họ tên và lời chúc.'; note.style.color = '#C08D82'; return; }
-      completeSubmit(name, messageVal);
+      if (!window.WeddingAPI) {
+        note.textContent = 'Dịch vụ gửi lời chúc chưa sẵn sàng. Vui lòng thử lại sau.';
+        note.style.color = '#C08D82';
+        return;
+      }
+
+      var wishToken = window.WeddingAPI.turnstileToken('wish-turnstile');
+      var wishTurnstile = document.getElementById('wish-turnstile');
+      if (wishTurnstile && !wishTurnstile.hidden && !wishToken) {
+        note.textContent = 'Hệ thống đang xác minh trình duyệt. Vui lòng đợi một chút rồi gửi lại.';
+        note.style.color = '#C08D82';
+        return;
+      }
+
+      var originalLabel = submitBtn ? submitBtn.textContent : '';
+      var payload = {
+        name: name,
+        message: messageVal,
+        website: document.getElementById('guest-website')?.value || '',
+        source: 'story',
+        turnstileToken: wishToken,
+        clientRequestId: window.WeddingAPI.requestId()
+      };
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Đang gửi…'; }
+      note.textContent = 'Đang gửi lời chúc của bạn…';
+      note.style.color = 'var(--text-muted)';
+      try {
+        var response = await window.WeddingAPI.submitWish(payload);
+        completeSubmit(response.wish, false);
+      } catch (error) {
+        if (!error.status || error.status >= 500) {
+          if (payload.turnstileToken) {
+            note.textContent = 'Kết nối bị gián đoạn. Vui lòng kiểm tra mạng rồi gửi lại lời chúc.';
+            note.style.color = '#C08D82';
+          } else {
+            var pending = window.WeddingAPI.queueWish(payload);
+            completeSubmit({ id: pending.clientRequestId, name: name, text: messageVal }, true);
+          }
+        } else {
+          note.textContent = error.message || 'Không thể gửi lời chúc. Vui lòng thử lại.';
+          note.style.color = '#C08D82';
+        }
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalLabel; }
+        window.WeddingAPI.resetTurnstile('wish-turnstile');
+      }
     });
 
-    function completeSubmit(name, messageVal) {
-      note.textContent = 'Cảm ơn ' + name + '! Lời chúc của bạn đã được gửi đến chúng mình.'; note.style.color = '#5B6B4F';
-      addWishToWall(name, messageVal); showThankModal(name); showToast(name, messageVal);
+    function completeSubmit(wish, pending) {
+      if (pending) {
+        note.textContent = 'Mạng đang gián đoạn — lời chúc đã được lưu trên thiết bị và sẽ tự gửi lại.';
+        note.style.color = '#B88A51';
+      } else {
+        note.textContent = 'Cảm ơn ' + wish.name + '! Lời chúc của bạn đã được gửi đến chúng mình.';
+        note.style.color = '#5B6B4F';
+      }
+      addWishToWall(wish);
+      if (!pending) {
+        showThankModal(wish.name);
+        showToast(wish.name, wish.text);
+      }
       if (submitBtn) { var rect = submitBtn.getBoundingClientRect(); createHeartBurst(rect.left + rect.width / 2, rect.top + rect.height / 2); }
       form.reset();
     }
@@ -2277,7 +2483,11 @@ window.storyFrames.subscribe(function() {
   function showToast(title, message) {
     var toastContainer = document.getElementById('toast-container'); if (!toastContainer) return;
     var toast = document.createElement('div'); toast.className = 'toast';
-    toast.innerHTML = `<strong>${title}</strong><p>${message || ''}</p>`;
+    var toastTitle = document.createElement('strong');
+    var toastMessage = document.createElement('p');
+    toastTitle.textContent = title;
+    toastMessage.textContent = message || '';
+    toast.append(toastTitle, toastMessage);
     toastContainer.appendChild(toast);
     requestAnimationFrame(function () { requestAnimationFrame(function () { toast.classList.add('show'); }); });
     setTimeout(function () { toast.classList.remove('show'); toast.classList.add('hide'); setTimeout(function () { toast.remove(); }, 400); }, 4000);

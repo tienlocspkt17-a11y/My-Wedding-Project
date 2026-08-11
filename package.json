@@ -1,0 +1,16 @@
+{
+  "name": "wedding-story",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:assets": "node build-assets.mjs",
+    "dev": "npm run build:assets && wrangler dev",
+    "deploy": "npm run build:assets && wrangler deploy",
+    "build:worker": "npm run build:assets && wrangler deploy --dry-run --outdir .wrangler/build",
+    "check": "node --test tests/*.test.mjs",
+    "guests:import": "node scripts/import-guests.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

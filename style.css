@@ -59,6 +59,56 @@ html:not(.gate-open) { overflow-x: hidden !important; overflow-y: auto !importan
 /* Body không được trở thành scroll-container riêng, nếu không position:sticky
    của sân khấu ACT 0 sẽ cuộn ra khỏi viewport thay vì bám ở top: 0. */
 html:not(.gate-open) body { overflow: visible !important; height: auto !important; }
+.invite-livewall {
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--invite-rose) 14%, transparent), transparent 32rem),
+    linear-gradient(180deg, var(--invite-paper-soft), var(--invite-paper));
+}
+.invite-livewall[hidden] { display: none !important; }
+.invite-livewall-panel {
+  display: grid;
+  grid-template-columns: minmax(12rem, .8fr) minmax(15rem, 1.2fr);
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: center;
+  width: min(54rem, 100%);
+  margin: clamp(2rem, 5vw, 3.5rem) auto;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid color-mix(in srgb, var(--invite-rose) 28%, transparent);
+  border-radius: 1.5rem;
+  background: color-mix(in srgb, var(--invite-paper-soft) 90%, transparent);
+  box-shadow: 0 1.25rem 4rem rgba(55, 38, 31, .08);
+}
+.invite-live-upload {
+  display: grid;
+  place-items: center;
+  min-height: 10rem;
+  padding: 1.5rem;
+  border: 1px dashed color-mix(in srgb, var(--invite-rose) 55%, transparent);
+  border-radius: 1rem;
+  cursor: pointer;
+  text-align: center;
+  transition: transform .25s ease, border-color .25s ease, background .25s ease;
+}
+.invite-live-upload:hover { transform: translateY(-2px); border-color: var(--invite-rose); background: color-mix(in srgb, var(--invite-rose) 7%, transparent); }
+.invite-live-upload > span { display: grid; place-items: center; width: 2.75rem; aspect-ratio: 1; margin-bottom: .65rem; border-radius: 50%; color: var(--invite-paper-soft); background: var(--invite-rose-dark); font-size: 1.5rem; }
+.invite-live-upload strong { color: var(--invite-ink); font: 500 1.2rem/1.2 'Playfair Display', serif; }
+.invite-live-upload small { margin-top: .35rem; color: var(--invite-muted); font-size: .72rem; }
+.invite-live-caption { display: grid; gap: .65rem; text-align: left; }
+.invite-live-caption span { color: var(--invite-gold); font-size: .7rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+.invite-live-caption input { width: 100%; min-height: 3.25rem; padding: .8rem 1rem; border: 1px solid color-mix(in srgb, var(--invite-muted) 30%, transparent); border-radius: .75rem; color: var(--invite-ink); background: var(--invite-paper); font: inherit; }
+.invite-live-status { grid-column: 1 / -1; margin: 0; color: var(--invite-muted); font-size: .82rem; text-align: center; }
+.invite-live-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(.6rem, 2vw, 1.15rem); }
+.invite-live-grid:empty::before { content: 'Khoảnh khắc đầu tiên đang chờ bạn.'; grid-column: 1 / -1; padding: 3rem 1rem; color: var(--invite-muted); font: italic 400 1rem/1.6 'Playfair Display', serif; text-align: center; }
+.invite-live-grid figure { overflow: hidden; margin: 0; border-radius: 1rem; background: var(--invite-paper-soft); box-shadow: 0 .8rem 2rem rgba(45, 29, 23, .1); }
+.invite-live-grid img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.invite-live-grid figcaption { min-height: 3.4rem; padding: .75rem .85rem; color: var(--invite-muted); font: italic 400 .78rem/1.45 'Playfair Display', serif; }
+@media (max-width: 720px) {
+  .invite-livewall-panel { grid-template-columns: 1fr; }
+  .invite-live-status { grid-column: auto; }
+  .invite-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
@@ -1679,6 +1729,8 @@ body.light-mode .theme-toggle { border-color: rgba(46, 42, 36, 0.15); background
 .photo-marquee .marquee-track img { width: 100%; height: 100%; object-fit: cover; }
 @media (max-width: 600px) { .photo-marquee .marquee-track figure { width: 170px; height: 220px; } }
 .livewall-note { margin-top: 28px; font-size: 0.8rem; color: var(--text-muted); max-width: 560px; margin-left: auto; margin-right: auto; transition: color 0.4s ease; }
+.hp-field { position: absolute !important; inline-size: 1px !important; block-size: 1px !important; overflow: hidden !important; clip-path: inset(50%) !important; opacity: 0 !important; pointer-events: none !important; }
+.turnstile-slot:not([hidden]) { display: flex; justify-content: center; margin: 1rem auto; min-height: 65px; }
 
 .reveal { opacity: 0; transform: translateY(28px); transition: opacity .9s var(--ease-smooth), transform .9s var(--ease-smooth); will-change: opacity, transform; }
 .reveal.is-visible { opacity: 1; transform: translateY(0); will-change: auto; }
@@ -4484,6 +4536,17 @@ body.light-mode .epilogue-progress i { background: rgba(53,45,41,.18); }
 .guestbook-form-panel .rsvp-form { gap: 18px; }
 .guestbook-form-panel .field textarea { min-height: 96px; }
 .guestbook-form-panel .rsvp-form button { min-height: 44px; width: min(100%, 230px); }
+.wish-form-trap {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  pointer-events: none !important;
+}
+.wish-turnstile { width: 100%; min-height: 0; overflow: hidden; }
+.wish-turnstile:not([hidden]) { min-height: 65px; display: grid; place-items: center; }
+#wish-submit:disabled { cursor: wait; opacity: .62; transform: none; }
 
 /* Bầu trời lời chúc: bỏ cảm giác khung kỹ thuật, chuyển thành một bầu trời mềm. */
 .guestbook-sky-panel {
@@ -5945,6 +6008,13 @@ html.invite-dark .invite-scroll-vine-progress { stroke: #a6b491; }
 .invite-ornament span { width: clamp(2.5rem, 8vw, 5rem); height: 1px; background: currentColor; opacity: .38; }
 .invite-ornament b { font-size: .5rem; transform: rotate(45deg); }
 .invite-formal-copy { color: var(--invite-muted); font: italic 400 clamp(1rem, 1.5vw, 1.16rem)/1.8 'Playfair Display', serif; }
+.invite-formal-copy span { color: var(--invite-ink); font-weight: 600; }
+.invite-personal-message {
+  width: min(36rem, 92%);
+  margin: .9rem auto 0;
+  color: var(--invite-rose-dark);
+  font: 500 clamp(.95rem, 1.35vw, 1.08rem)/1.65 'Montserrat', sans-serif;
+}
 .invite-main-date { display: grid; justify-items: center; margin-top: clamp(2rem, 5vh, 3.4rem); color: var(--invite-gold); }
 .invite-main-date strong { margin: .06em 0 .12em; color: var(--invite-ink); font: 400 clamp(3.6rem, 8vw, 6rem)/.9 'Playfair Display', serif; }
 .invite-main-date span { font-size: .68rem; font-weight: 600; letter-spacing: .2em; }

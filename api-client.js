@@ -15,14 +15,17 @@
   }
 
   async function request(path, options) {
+    var requestOptions = Object.assign({}, options || {});
     var controller = new AbortController();
-    var timeout = setTimeout(function () { controller.abort(); }, API_TIMEOUT);
+    var timeoutMs = Math.max(API_TIMEOUT, Number(requestOptions.timeout) || API_TIMEOUT);
+    delete requestOptions.timeout;
+    var timeout = setTimeout(function () { controller.abort(); }, timeoutMs);
     try {
       var response = await fetch(path, Object.assign({
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
         signal: controller.signal,
-      }, options || {}));
+      }, requestOptions));
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok || payload.ok === false) {
         throw apiError(payload.error || 'Yêu cầu không thành công.', response.status, payload.code);
@@ -76,8 +79,64 @@
       if (photo[key] !== undefined && photo[key] !== null) form.append(key, String(photo[key]));
     });
     if (!form.has('clientRequestId')) form.append('clientRequestId', requestId());
-    form.append('photo', file, file?.name || 'wedding-photo.jpg');
-    return request('/api/photos', { method: 'POST', body: form });
+    var extension = file?.type === 'image/webp' ? 'webp' : file?.type === 'image/png' ? 'png' : 'jpg';
+    form.append('photo', file, file?.name || 'wedding-photo.' + extension);
+    return request('/api/photos', { method: 'POST', body: form, timeout: 45000 });
+  }
+
+  function canvasBlob(canvas, type, quality) {
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (blob) { resolve(blob || null); }, type, quality);
+    });
+  }
+
+  async function compressPhoto(file, options) {
+    options = options || {};
+    var maxInputBytes = Math.max(1_000_000, Number(options.maxInputBytes) || 40_000_000);
+    var maxOutputBytes = Math.max(200_000, Number(options.maxOutputBytes) || 1_200_000);
+    var maxEdge = Math.max(640, Math.min(1920, Number(options.maxEdge) || 1440));
+    if (!file) return null;
+    var looksLikeImage = String(file.type || '').startsWith('image/') || /\.(?:jpe?g|png|webp|heic|heif)$/i.test(file.name || '');
+    if (!looksLikeImage || !file.size || file.size > maxInputBytes) return null;
+
+    var image = new Image();
+    image.decoding = 'async';
+    var objectUrl = URL.createObjectURL(file);
+    try {
+      await new Promise(function (resolve, reject) {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = objectUrl;
+      });
+      if (!image.naturalWidth || !image.naturalHeight) return null;
+
+      async function encodeAt(edge, quality) {
+        var scale = Math.min(1, edge / Math.max(image.naturalWidth, image.naturalHeight));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        var context = canvas.getContext('2d', { alpha: false });
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        var blob = await canvasBlob(canvas, 'image/webp', quality);
+        if (!blob || blob.type !== 'image/webp') blob = await canvasBlob(canvas, 'image/jpeg', Math.min(.86, quality));
+        canvas.width = 1;
+        canvas.height = 1;
+        return blob;
+      }
+
+      var output = await encodeAt(maxEdge, .82);
+      if (output && output.size > maxOutputBytes) output = await encodeAt(Math.round(maxEdge * .82), .68);
+      if (output && output.size > maxOutputBytes) output = await encodeAt(Math.round(maxEdge * .68), .58);
+      return output && output.size <= maxOutputBytes ? output : null;
+    } catch (_) {
+      return null;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      image.removeAttribute('src');
+    }
   }
 
   function invitationSlug() {
@@ -189,6 +248,7 @@
     submitSongSuggestion: submitSongSuggestion,
     listPhotos: listPhotos,
     submitPhoto: submitPhoto,
+    compressPhoto: compressPhoto,
     getInvitation: getInvitation,
     invitationSlug: invitationSlug,
     queueWish: queueWish,

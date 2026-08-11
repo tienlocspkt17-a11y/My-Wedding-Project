@@ -93,9 +93,9 @@ WEDDING_DAY_END=2026-10-21T06:00:00+07:00
 
 - R2 bucket: `my-wedding-photos`, binding `PHOTO_BUCKET`.
 - KV namespace: binding `RATE_LIMIT`.
-- Ảnh story được lưu `pending` và chỉ xuất hiện sau khi duyệt.
+- Ảnh story hợp lệ được publish ngay; quản trị viên vẫn có thể gỡ ảnh về sau.
 - Ảnh `wedding-day` chỉ nhận từ slug khách đang hoạt động, đúng khung giờ cấu hình; ảnh hợp lệ được publish ngay.
-- Mỗi ảnh được nén phía client, Worker chỉ nhận JPG/PNG/WebP tối đa 2,5 MB và kiểm tra chữ ký tệp.
+- Ảnh được thu nhỏ và encode WebP ngay trên thiết bị (fallback JPEG khi cần), với mục tiêu tối đa 1,2 MB. Worker vẫn giữ trần 2,5 MB để tương thích và kiểm tra chữ ký tệp.
 
 Health check sau deploy:
 
@@ -202,9 +202,9 @@ npm run guests:import -- guests.json
 
 Script đọc `ADMIN_API_SECRET` từ `.env.production`, không in secret và chỉ in các URL thiệp đã tạo.
 
-## 5.1. Duyệt bài hát và ảnh story
+## 5.1. Quản lý bài hát và ảnh story
 
-Nội dung mới mặc định là `pending`. Có thể publish/reject bằng endpoint admin:
+Gợi ý bài hát mới vẫn ở trạng thái `pending`. Ảnh story hợp lệ được publish ngay nhưng vẫn có thể gỡ bằng endpoint admin:
 
 ```bash
 curl -X POST "https://ten-mien-cua-ban/api/admin/moderate" \

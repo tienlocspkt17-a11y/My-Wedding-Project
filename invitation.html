@@ -434,7 +434,7 @@
         </label>
         <input type="text" id="invite-live-website" tabindex="-1" autocomplete="off" aria-hidden="true" class="hp-field">
         <div id="invite-live-turnstile" class="turnstile-slot" hidden></div>
-        <p class="invite-live-status" id="invite-live-status" role="status">Mỗi lượt một ảnh · tối đa 2,5 MB sau khi nén.</p>
+        <p class="invite-live-status" id="invite-live-status" role="status">Mỗi lượt một ảnh · tự chuyển WebP, mục tiêu dưới 1,2 MB.</p>
       </div>
       <div class="invite-live-grid" id="invite-live-grid" aria-live="polite"></div>
     </div>
@@ -593,31 +593,17 @@
     }
 
     function prepareInviteLivePhoto(file) {
-      return new Promise(function (resolve) {
-        if (!file || !file.type.startsWith('image/')) return resolve(null);
-        var image = new Image();
-        var objectUrl = URL.createObjectURL(file);
-        image.onload = function () {
-          var scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight));
-          var canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-          canvas.getContext('2d', { alpha: false }).drawImage(image, 0, 0, canvas.width, canvas.height);
-          URL.revokeObjectURL(objectUrl);
-          image.removeAttribute('src');
-          canvas.toBlob(function (blob) {
-            canvas.width = 1;
-            canvas.height = 1;
-            resolve(blob && blob.size <= 2500000 ? blob : null);
-          }, 'image/jpeg', .8);
-        };
-        image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
-        image.src = objectUrl;
+      if (!window.WeddingAPI?.compressPhoto) return Promise.resolve(null);
+      return window.WeddingAPI.compressPhoto(file, {
+        maxEdge: 1440,
+        maxInputBytes: 40000000,
+        maxOutputBytes: 1200000
       });
     }
 
     function addInviteLivePhoto(grid, photo, prepend) {
       if (!grid || !photo?.url) return;
+      if (photo.id && grid.querySelector('[data-photo-id="' + photo.id + '"]')) return;
       var figure = document.createElement('figure');
       var image = document.createElement('img');
       var caption = document.createElement('figcaption');
@@ -626,6 +612,7 @@
       image.loading = 'lazy';
       image.decoding = 'async';
       caption.textContent = photo.caption || (photo.senderName ? 'Từ ' + photo.senderName : 'Một khoảnh khắc vừa được gửi');
+      if (photo.id) figure.dataset.photoId = photo.id;
       figure.append(image, caption);
       if (prepend) grid.prepend(figure); else grid.appendChild(figure);
     }
@@ -641,9 +628,13 @@
         if (!config?.weddingDay?.active) return;
         section.hidden = false;
         window.WeddingAPI.mountTurnstile('invite-live-turnstile').catch(function () {});
-        window.WeddingAPI.listPhotos('wedding-day', 24).then(function (response) {
-          (response.items || []).reverse().forEach(function (photo) { addInviteLivePhoto(grid, photo, true); });
-        }).catch(function () {});
+        function refreshLivePhotos() {
+          window.WeddingAPI.listPhotos('wedding-day', 24).then(function (response) {
+            (response.items || []).reverse().forEach(function (photo) { addInviteLivePhoto(grid, photo, true); });
+          }).catch(function () {});
+        }
+        refreshLivePhotos();
+        setInterval(function () { if (!document.hidden) refreshLivePhotos(); }, 20000);
         input.addEventListener('change', async function () {
           var file = input.files?.[0];
           input.value = '';

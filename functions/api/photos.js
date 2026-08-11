@@ -78,11 +78,10 @@ export async function onRequestPost(context) {
     await verifyTurnstile(env, request, payload.turnstileToken);
     await enforceRateLimit(env, request, `photo-${payload.context}`, payload.context === 'wedding-day' ? 8 : 3, 60 * 60);
 
-    let status = 'pending';
+    const status = 'published';
     if (payload.context === 'wedding-day') {
       if (!weddingDayState(env).active) throw new ApiError(403, 'Live Photo chỉ mở trong ngày cưới.', 'wedding_day_closed');
       if (!(await validWeddingGuest(env, payload.guestSlug))) throw new ApiError(403, 'Đường dẫn thiệp chưa được xác thực.', 'invitation_required');
-      status = 'published';
     }
 
     const id = crypto.randomUUID();

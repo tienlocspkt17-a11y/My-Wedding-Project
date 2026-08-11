@@ -1884,7 +1884,9 @@ window.storyFrames.subscribe(function() {
       albumPhotos = typeof invisibleData !== 'undefined' ? invisibleData.slice(0, 6).map(function(item) { return item.img; }) : galleryImages.slice(0, 6);
   var uploadedPhotos = [];
   var remotePhotosLoaded = false;
+  var remotePhotosLoading = false;
   var photoWallInitialized = false;
+  var photoRefreshTimer = 0;
 
   function renderPhotoMarquee() {
     if (!photoTrack) return; photoTrack.innerHTML = '';
@@ -1896,15 +1898,16 @@ window.storyFrames.subscribe(function() {
     });
   }
 
-  function loadRemotePhotos() {
-    if (remotePhotosLoaded || !window.WeddingAPI) return;
+  function loadRemotePhotos(force) {
+    if (remotePhotosLoading || (remotePhotosLoaded && !force) || !window.WeddingAPI) return;
+    remotePhotosLoading = true;
     remotePhotosLoaded = true;
     window.WeddingAPI.listPhotos('story', MAX_STORED_PHOTOS).then(function (response) {
       var localItems = uploadedPhotos.filter(function (item) { return item.local; });
       var remoteItems = (response.items || []).map(function (item) { return { id: item.id, src: item.url, caption: item.caption || '', local: false }; });
       uploadedPhotos = localItems.concat(remoteItems).slice(0, MAX_STORED_PHOTOS);
       if (photoWallInitialized) renderPhotoMarquee();
-    }).catch(function () { remotePhotosLoaded = false; });
+    }).catch(function () { remotePhotosLoaded = false; }).finally(function () { remotePhotosLoading = false; });
   }
 
   function initPhotoWall() {
@@ -1912,10 +1915,16 @@ window.storyFrames.subscribe(function() {
     photoWallInitialized = true;
     renderPhotoMarquee();
     loadRemotePhotos();
+    clearInterval(photoRefreshTimer);
+    photoRefreshTimer = setInterval(function () {
+      if (!document.hidden && photoWallInitialized) loadRemotePhotos(true);
+    }, 30000);
   }
 
   function releasePhotoWall() {
     if (!photoWallInitialized || !photoTrack) return;
+    clearInterval(photoRefreshTimer);
+    photoRefreshTimer = 0;
     photoTrack.replaceChildren();
     uploadedPhotos = uploadedPhotos.filter(function (item) {
       if (item.local && item.src) URL.revokeObjectURL(item.src);
@@ -1942,29 +1951,11 @@ window.storyFrames.subscribe(function() {
 
   var uploadInput = document.getElementById('photo-upload-input'), uploadHint = document.getElementById('upload-hint');
   function preparePhoto(file) {
-    return new Promise(function (resolve) {
-      if (!file || !file.type.startsWith('image/')) return resolve(null);
-      var image = new Image();
-      var objectUrl = URL.createObjectURL(file);
-      image.onload = function () {
-        var maxEdge = window.storyUseMobileAssets ? 960 : 1280;
-        var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
-        var output = document.createElement('canvas');
-        output.width = Math.max(1, Math.round(image.naturalWidth * scale));
-        output.height = Math.max(1, Math.round(image.naturalHeight * scale));
-        output.getContext('2d', { alpha: false }).drawImage(image, 0, 0, output.width, output.height);
-        URL.revokeObjectURL(objectUrl);
-        image.removeAttribute('src');
-        // Encode bất đồng bộ và thu canvas ngay sau khi có Blob.
-        output.toBlob(function (blob) {
-          output.width = 1;
-          output.height = 1;
-          if (!blob) return resolve(null);
-          resolve(blob);
-        }, 'image/jpeg', 0.8);
-      };
-      image.onerror = function () { URL.revokeObjectURL(objectUrl); resolve(null); };
-      image.src = objectUrl;
+    if (!window.WeddingAPI?.compressPhoto) return Promise.resolve(null);
+    return window.WeddingAPI.compressPhoto(file, {
+      maxEdge: window.storyUseMobileAssets ? 1120 : 1440,
+      maxInputBytes: 40000000,
+      maxOutputBytes: 1200000
     });
   }
   if (uploadInput) {
@@ -1988,17 +1979,22 @@ window.storyFrames.subscribe(function() {
         return promise.then(function () {
           return preparePhoto(file).then(async function (blob) {
             if (!blob) { failedCount += 1; return; }
-            var preview = { src: URL.createObjectURL(blob), caption: 'Ảnh đang chờ duyệt', local: true };
+            var preview = { src: URL.createObjectURL(blob), caption: 'Đang gửi khoảnh khắc…', local: true };
             uploadedPhotos.unshift(preview);
             uploadedPhotos = uploadedPhotos.slice(0, MAX_STORED_PHOTOS);
             renderPhotoMarquee();
             try {
-              await window.WeddingAPI.submitPhoto({
+              var response = await window.WeddingAPI.submitPhoto({
                 context: 'story',
                 website: document.getElementById('photo-website')?.value || '',
                 guestSlug: window.WeddingAPI.invitationSlug(),
                 turnstileToken: photoToken
               }, blob);
+              URL.revokeObjectURL(preview.src);
+              preview.src = response.photo.url;
+              preview.caption = response.photo.caption || 'Một khoảnh khắc vừa được chia sẻ';
+              preview.local = false;
+              renderPhotoMarquee();
               uploadedCount += 1;
             } catch (error) {
               failedCount += 1;
@@ -2010,7 +2006,7 @@ window.storyFrames.subscribe(function() {
         });
       }, Promise.resolve()).then(function () {
         if (uploadHint) {
-          uploadHint.textContent = uploadedCount ? 'Đã nhận ' + uploadedCount + ' ảnh · ảnh sẽ xuất hiện sau khi được duyệt.' : 'Chưa thể gửi ảnh. Vui lòng thử lại sau.';
+          uploadHint.textContent = uploadedCount ? 'Đã đăng ' + uploadedCount + ' ảnh lên album.' : 'Chưa thể gửi ảnh. Vui lòng thử lại sau.';
           uploadHint.style.color = uploadedCount ? '#5B6B4F' : '#C08D82';
           if (failedCount && uploadedCount) uploadHint.textContent += ' ' + failedCount + ' ảnh chưa gửi được.';
         }

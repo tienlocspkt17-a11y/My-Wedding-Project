@@ -16,6 +16,20 @@ test('personalized invitation uses root-relative static assets', async () => {
   assert.doesNotMatch(html, /(?:href|src)="(?:style\.css|api-client\.js|nhac_nen\.mp3|images\/|index\.html)/);
 });
 
+test('valid photos publish immediately and the client prefers WebP compression', async () => {
+  const [photoApi, client, story] = await Promise.all([
+    readFile(new URL('../functions/api/photos.js', import.meta.url), 'utf8'),
+    readFile(new URL('../api-client.js', import.meta.url), 'utf8'),
+    readFile(new URL('../script.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(photoApi, /const status = 'published'/);
+  assert.doesNotMatch(photoApi, /status = 'pending'/);
+  assert.match(client, /canvasBlob\(canvas, 'image\/webp'/);
+  assert.match(client, /canvasBlob\(canvas, 'image\/jpeg'/);
+  assert.match(client, /maxOutputBytes\) \|\| 1_200_000/);
+  assert.doesNotMatch(story, /Ảnh đang chờ duyệt|ảnh sẽ xuất hiện sau khi được duyệt/);
+});
+
 test('validation cleans and bounds public input', () => {
   const wish = validateWish({
     name: '  Nguyễn   Văn A  ',
